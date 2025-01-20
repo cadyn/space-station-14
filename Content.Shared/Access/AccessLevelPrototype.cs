@@ -6,22 +6,24 @@ namespace Content.Shared.Access
     ///     Defines a single access level that can be stored on ID cards and checked for.
     /// </summary>
     [Prototype("accessLevel")]
-    public sealed class AccessLevelPrototype : IPrototype
+    public sealed partial class AccessLevelPrototype : IPrototype
     {
         [ViewVariables]
-        [IdDataFieldAttribute]
-        public string ID { get; } = default!;
+        [IdDataField]
+        public string ID { get; private set; } = default!;
 
         /// <summary>
         ///     The player-visible name of the access level, in the ID card console and such.
         /// </summary>
         [DataField("name")]
-        public string Name
-        {
-            get => (_name is not null) ? _name : ID;
-            private set => _name = Loc.GetString(value);
-        }
+        public string? Name { get; set; }
 
-        private string? _name;
+        public string GetAccessLevelName()
+        {
+            if (Name is { } name)
+                return Loc.GetString(name);
+
+            return ID;
+        }
     }
 }

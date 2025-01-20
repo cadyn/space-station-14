@@ -1,119 +1,132 @@
-using System.Diagnostics.CodeAnalysis;
 using Content.Server.Body.Components;
-using Content.Server.GameTicking;
-using Content.Server.Kitchen.Components;
-using Content.Server.Mind.Components;
+using Content.Server.Ghost;
+using Content.Server.Humanoid;
 using Content.Shared.Body.Components;
-using Content.Shared.MobState.Components;
+using Content.Shared.Body.Part;
+using Content.Shared.Body.Systems;
+using Content.Shared.Humanoid;
+using Content.Shared.Mind;
+using Content.Shared.Mobs.Systems;
 using Content.Shared.Movement.Events;
+using Content.Shared.Movement.Systems;
+using Robust.Shared.Audio;
 using Robust.Shared.Timing;
+using System.Numerics;
 
-namespace Content.Server.Body.Systems
+namespace Content.Server.Body.Systems;
+
+public sealed class BodySystem : SharedBodySystem
 {
-    public sealed class BodySystem : EntitySystem
+    [Dependency] private readonly GhostSystem _ghostSystem = default!;
+    [Dependency] private readonly IGameTiming _gameTiming = default!;
+    [Dependency] private readonly HumanoidAppearanceSystem _humanoidSystem = default!;
+    [Dependency] private readonly MobStateSystem _mobState = default!;
+    [Dependency] private readonly SharedMindSystem _mindSystem = default!;
+
+    public override void Initialize()
     {
-        [Dependency] private readonly GameTicker _ticker = default!;
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
+        base.Initialize();
 
-        public override void Initialize()
+        SubscribeLocalEvent<BodyComponent, MoveInputEvent>(OnRelayMoveInput);
+        SubscribeLocalEvent<BodyComponent, ApplyMetabolicMultiplierEvent>(OnApplyMetabolicMultiplier);
+    }
+
+    private void OnRelayMoveInput(Entity<BodyComponent> ent, ref MoveInputEvent args)
+    {
+        // If they haven't actually moved then ignore it.
+        if ((args.Entity.Comp.HeldMoveButtons &
+             (MoveButtons.Down | MoveButtons.Left | MoveButtons.Up | MoveButtons.Right)) == 0x0)
         {
-            base.Initialize();
-            SubscribeLocalEvent<BodyComponent, MoveInputEvent>(OnRelayMoveInput);
-            SubscribeLocalEvent<BodyComponent, ApplyMetabolicMultiplierEvent>(OnApplyMetabolicMultiplier);
-            SubscribeLocalEvent<BodyComponent, BeingMicrowavedEvent>(OnBeingMicrowaved);
-            SubscribeLocalEvent<BodyPartComponent, MapInitEvent>((_, c, _) => c.MapInitialize());
+            return;
         }
 
-        private void OnRelayMoveInput(EntityUid uid, BodyComponent component, ref MoveInputEvent args)
+        if (_mobState.IsDead(ent) && _mindSystem.TryGetMind(ent, out var mindId, out var mind))
         {
-            if (EntityManager.TryGetComponent<MobStateComponent>(uid, out var mobState) &&
-                mobState.IsDead() &&
-                EntityManager.TryGetComponent<MindComponent>(uid, out var mind) &&
-                mind.HasMind)
-            {
-                if (!mind.Mind!.TimeOfDeath.HasValue)
-                {
-                    mind.Mind.TimeOfDeath = _gameTiming.RealTime;
-                }
+            mind.TimeOfDeath ??= _gameTiming.RealTime;
+            _ghostSystem.OnGhostAttempt(mindId, canReturnGlobal: true, mind: mind);
+        }
+    }
 
-                _ticker.OnGhostAttempt(mind.Mind!, true);
+    private void OnApplyMetabolicMultiplier(
+        Entity<BodyComponent> ent,
+        ref ApplyMetabolicMultiplierEvent args)
+    {
+        foreach (var organ in GetBodyOrgans(ent, ent))
+        {
+            RaiseLocalEvent(organ.Id, ref args);
+        }
+    }
+
+    protected override void AddPart(
+        Entity<BodyComponent?> bodyEnt,
+        Entity<BodyPartComponent> partEnt,
+        string slotId)
+    {
+        // TODO: Predict this probably.
+        base.AddPart(bodyEnt, partEnt, slotId);
+
+        if (TryComp<HumanoidAppearanceComponent>(bodyEnt, out var humanoid))
+        {
+            var layer = partEnt.Comp.ToHumanoidLayers();
+            if (layer != null)
+            {
+                var layers = HumanoidVisualLayersExtension.Sublayers(layer.Value);
+                _humanoidSystem.SetLayersVisibility(
+                    bodyEnt, layers, visible: true, permanent: true, humanoid);
             }
         }
+    }
 
-        private void OnApplyMetabolicMultiplier(EntityUid uid, BodyComponent component, ApplyMetabolicMultiplierEvent args)
+    protected override void RemovePart(
+        Entity<BodyComponent?> bodyEnt,
+        Entity<BodyPartComponent> partEnt,
+        string slotId)
+    {
+        base.RemovePart(bodyEnt, partEnt, slotId);
+
+        if (!TryComp<HumanoidAppearanceComponent>(bodyEnt, out var humanoid))
+            return;
+
+        var layer = partEnt.Comp.ToHumanoidLayers();
+
+        if (layer is null)
+            return;
+
+        var layers = HumanoidVisualLayersExtension.Sublayers(layer.Value);
+        _humanoidSystem.SetLayersVisibility(
+            bodyEnt, layers, visible: false, permanent: true, humanoid);
+    }
+
+    public override HashSet<EntityUid> GibBody(
+        EntityUid bodyId,
+        bool gibOrgans = false,
+        BodyComponent? body = null,
+        bool launchGibs = true,
+        Vector2? splatDirection = null,
+        float splatModifier = 1,
+        Angle splatCone = default,
+        SoundSpecifier? gibSoundOverride = null
+    )
+    {
+        if (!Resolve(bodyId, ref body, logMissing: false)
+            || TerminatingOrDeleted(bodyId)
+            || EntityManager.IsQueuedForDeletion(bodyId))
         {
-            foreach (var (part, _) in component.Parts)
-            foreach (var mechanism in part.Mechanisms)
-            {
-                RaiseLocalEvent(mechanism.Owner, args, false);
-            }
+            return new HashSet<EntityUid>();
         }
 
-        private void OnBeingMicrowaved(EntityUid uid, BodyComponent component, BeingMicrowavedEvent args)
-        {
-            if (args.Handled)
-                return;
+        var xform = Transform(bodyId);
+        if (xform.MapUid is null)
+            return new HashSet<EntityUid>();
 
-            // Don't microwave animals, kids
-            Transform(uid).AttachToGridOrMap();
-            component.Gib();
+        var gibs = base.GibBody(bodyId, gibOrgans, body, launchGibs: launchGibs,
+            splatDirection: splatDirection, splatModifier: splatModifier, splatCone:splatCone);
 
-            args.Handled = true;
-        }
+        var ev = new BeingGibbedEvent(gibs);
+        RaiseLocalEvent(bodyId, ref ev);
 
-        /// <summary>
-        ///     Returns a list of ValueTuples of <see cref="T"/> and MechanismComponent on each mechanism
-        ///     in the given body.
-        /// </summary>
-        /// <param name="uid">The entity to check for the component on.</param>
-        /// <param name="body">The body to check for mechanisms on.</param>
-        /// <typeparam name="T">The component to check for.</typeparam>
-        public List<(T Comp, MechanismComponent Mech)> GetComponentsOnMechanisms<T>(EntityUid uid,
-            SharedBodyComponent? body=null) where T : Component
-        {
-            if (!Resolve(uid, ref body))
-                return new();
+        QueueDel(bodyId);
 
-            var query = EntityManager.GetEntityQuery<T>();
-            var list = new List<(T Comp, MechanismComponent Mech)>(3);
-            foreach (var (part, _) in body.Parts)
-            foreach (var mechanism in part.Mechanisms)
-            {
-                if (query.TryGetComponent(mechanism.Owner, out var comp))
-                    list.Add((comp, mechanism));
-            }
-
-            return list;
-        }
-
-        /// <summary>
-        ///     Tries to get a list of ValueTuples of <see cref="T"/> and MechanismComponent on each mechanism
-        ///     in the given body.
-        /// </summary>
-        /// <param name="uid">The entity to check for the component on.</param>
-        /// <param name="comps">The list of components.</param>
-        /// <param name="body">The body to check for mechanisms on.</param>
-        /// <typeparam name="T">The component to check for.</typeparam>
-        /// <returns>Whether any were found.</returns>
-        public bool TryGetComponentsOnMechanisms<T>(EntityUid uid,
-            [NotNullWhen(true)] out List<(T Comp, MechanismComponent Mech)>? comps,
-            SharedBodyComponent? body=null) where T: Component
-        {
-            if (!Resolve(uid, ref body))
-            {
-                comps = null;
-                return false;
-            }
-
-            comps = GetComponentsOnMechanisms<T>(uid, body);
-
-            if (comps.Count == 0)
-            {
-                comps = null;
-                return false;
-            }
-
-            return true;
-        }
+        return gibs;
     }
 }

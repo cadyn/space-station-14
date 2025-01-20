@@ -1,10 +1,12 @@
-﻿using Robust.Shared.Serialization;
+﻿using Content.Shared.Humanoid.Markings;
+using Robust.Shared.Serialization;
 
 namespace Content.Shared.Humanoid
 {
     [Serializable, NetSerializable]
     public enum HumanoidVisualLayers : byte
     {
+        Special, // for the cat ears
         Tail,
         Hair,
         FacialHair,
@@ -17,6 +19,7 @@ namespace Content.Shared.Humanoid
         RArm,
         LArm,
         RHand,
+
         LHand,
         RLeg,
         LLeg,
@@ -26,5 +29,6 @@ namespace Content.Shared.Humanoid
         StencilMask,
         Ensnare,
         Fire,
+
     }
 }

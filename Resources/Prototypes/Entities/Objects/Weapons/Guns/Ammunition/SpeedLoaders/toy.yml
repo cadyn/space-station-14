@@ -4,13 +4,16 @@
   parent: BaseItem
   abstract: true
   components:
+  - type: Tag
+    tags:
+      - SpeedLoaderCap
+  - type: SpeedLoader
   - type: BallisticAmmoProvider
     whitelist:
       tags:
         - CartridgeCap
     capacity: 6
   - type: Sprite
-    netsync: false
     layers:
     - state: base
       map: ["enum.GunVisualLayers.Base"]

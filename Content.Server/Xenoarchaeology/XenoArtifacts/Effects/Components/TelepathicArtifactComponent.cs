@@ -5,7 +5,7 @@ namespace Content.Server.Xenoarchaeology.XenoArtifacts.Effects.Components;
 ///     Thoughts are shown as popups and unique for each player.
 /// </summary>
 [RegisterComponent]
-public sealed class TelepathicArtifactComponent : Component
+public sealed partial class TelepathicArtifactComponent : Component
 {
     /// <summary>
     ///     Loc string ids of telepathic messages.
@@ -13,7 +13,7 @@ public sealed class TelepathicArtifactComponent : Component
     /// </summary>
     [DataField("messages")]
     [ViewVariables(VVAccess.ReadWrite)]
-    public string[] Messages = default!;
+    public List<string> Messages = default!;
 
     /// <summary>
     ///     Loc string ids of telepathic messages (spooky version).
@@ -21,7 +21,7 @@ public sealed class TelepathicArtifactComponent : Component
     /// </summary>
     [DataField("drastic")]
     [ViewVariables(VVAccess.ReadWrite)]
-    public string[] DrasticMessages = default!;
+    public List<string>? DrasticMessages;
 
     /// <summary>
     ///     Probability to pick drastic version of message.

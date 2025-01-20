@@ -1,9 +1,9 @@
 namespace Content.Client.SurveillanceCamera;
 
 [RegisterComponent]
-public sealed class ActiveSurveillanceCameraMonitorVisualsComponent : Component
+public sealed partial class ActiveSurveillanceCameraMonitorVisualsComponent : Component
 {
-    public float TimeLeft = 30f;
+    public float TimeLeft = 10f;
 
     public Action? OnFinish;
 }

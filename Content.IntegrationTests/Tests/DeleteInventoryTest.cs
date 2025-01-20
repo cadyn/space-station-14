@@ -1,14 +1,8 @@
-using System.Threading.Tasks;
-using Content.Server.Clothing.Components;
-using Content.Server.Inventory;
+using Content.Shared.Clothing.Components;
 using Content.Shared.Clothing.EntitySystems;
 using Content.Shared.Inventory;
-using Content.Shared.Item;
-using NUnit.Framework;
 using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
-using Robust.Shared.Map;
 
 namespace Content.IntegrationTests.Tests
 {
@@ -20,26 +14,26 @@ namespace Content.IntegrationTests.Tests
         [Test]
         public async Task Test()
         {
-            await using var pairTracker = await PoolManager.GetServerClient(new PoolSettings{NoClient = true});
-            var server = pairTracker.Pair.Server;
+            await using var pair = await PoolManager.GetServerClient();
+            var server = pair.Server;
+            var testMap = await pair.CreateTestMap();
+            var entMgr = server.ResolveDependency<IEntityManager>();
+            var sysManager = server.ResolveDependency<IEntitySystemManager>();
+            var coordinates = testMap.GridCoords;
 
             await server.WaitAssertion(() =>
             {
                 // Spawn everything.
-                var mapMan = IoCManager.Resolve<IMapManager>();
-                var invSystem = IoCManager.Resolve<IEntitySystemManager>().GetEntitySystem<InventorySystem>();
+                var invSystem = sysManager.GetEntitySystem<InventorySystem>();
 
-                mapMan.CreateNewMapEntity(MapId.Nullspace);
+                var container = entMgr.SpawnEntity(null, coordinates);
+                entMgr.EnsureComponent<InventoryComponent>(container);
+                entMgr.EnsureComponent<ContainerManagerComponent>(container);
 
-                var entMgr = IoCManager.Resolve<IEntityManager>();
-                var container = entMgr.SpawnEntity(null, MapCoordinates.Nullspace);
-                entMgr.AddComponent<ServerInventoryComponent>(container);
-                entMgr.AddComponent<ContainerManagerComponent>(container);
+                var child = entMgr.SpawnEntity(null, coordinates);
+                var item = entMgr.EnsureComponent<ClothingComponent>(child);
 
-                var child = entMgr.SpawnEntity(null, MapCoordinates.Nullspace);
-                var item = entMgr.AddComponent<ClothingComponent>(child);
-
-                IoCManager.Resolve<IEntitySystemManager>().GetEntitySystem<ClothingSystem>().SetSlots(item.Owner, SlotFlags.HEAD, item);
+                sysManager.GetEntitySystem<ClothingSystem>().SetSlots(child, SlotFlags.HEAD, item);
 
                 // Equip item.
                 Assert.That(invSystem.TryEquip(container, child, "head"), Is.True);
@@ -50,7 +44,7 @@ namespace Content.IntegrationTests.Tests
                 // Assert that child item was also deleted.
                 Assert.That(item.Deleted, Is.True);
             });
-            await pairTracker.CleanReturnAsync();
+            await pair.CleanReturnAsync();
         }
     }
 }

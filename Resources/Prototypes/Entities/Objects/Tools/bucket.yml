@@ -5,10 +5,10 @@
   description: It's a boring old bucket.
   components:
   - type: Drink
-    isOpen: true
+    solution: bucket
+    ignoreEmpty: true
   - type: Clickable
   - type: Sprite
-    netsync: false
     sprite: Objects/Tools/bucket.rsi
     layers:
     - state: icon
@@ -16,25 +16,36 @@
       state: fill-1
       visible: false
   - type: Item
-    size: 100
+    size: Normal
   - type: Clothing
     sprite: Objects/Tools/bucket.rsi
     slots:
     - HEAD
+    quickEquip: false
   - type: SolutionContainerManager
     solutions:
       bucket:
         maxVol: 250
+  - type: MixableSolution
+    solution: bucket
   - type: SolutionTransfer
-    transferAmount: 50
+    transferAmount: 100
     maxTransferAmount: 100
     minTransferAmount: 10
     canChangeTransferAmount: true
   - type: UserInterface
     interfaces:
-    - key: enum.TransferAmountUiKey.Key
-      type: TransferAmountBoundUserInterface
+      enum.TransferAmountUiKey.Key:
+        type: TransferAmountBoundUserInterface
+  - type: MeleeWeapon
+    soundNoDamage:
+      path: "/Audio/Effects/Fluids/splat.ogg"
+    damage:
+      types:
+        Blunt: 0
   - type: Spillable
+    solution: bucket
+  - type: SpillWhenWorn
     solution: bucket
   - type: DrawableSolution
     solution: bucket
@@ -42,9 +53,18 @@
     solution: bucket
   - type: DrainableSolution
     solution: bucket
+  - type: SolutionItemStatus
+    solution: bucket
   - type: Appearance
   - type: SolutionContainerVisuals
     maxFillLevels: 3
     fillBaseName: fill-
   - type: ExaminableSolution
     solution: bucket
+  - type: Tag
+    tags:
+      - Bucket
+  - type: PhysicalComposition
+    materialComposition:
+      Plastic: 50
+  - type: DnaSubstanceTrace

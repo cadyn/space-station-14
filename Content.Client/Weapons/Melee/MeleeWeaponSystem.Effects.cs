@@ -1,104 +1,232 @@
-using Content.Shared.Weapons;
+using System.Numerics;
+using Content.Client.Animations;
+using Content.Client.Weapons.Melee.Components;
 using Content.Shared.Weapons.Melee;
 using Robust.Client.Animations;
 using Robust.Client.GameObjects;
 using Robust.Shared.Animations;
-using Robust.Shared.Utility;
+using Robust.Shared.Map;
 
 namespace Content.Client.Weapons.Melee;
 
 public sealed partial class MeleeWeaponSystem
 {
+    private const string FadeAnimationKey = "melee-fade";
+    private const string SlashAnimationKey = "melee-slash";
+    private const string ThrustAnimationKey = "melee-thrust";
+
     /// <summary>
-    /// It's a little on the long side but given we use multiple colours denoting what happened it makes it easier to register.
+    /// Does all of the melee effects for a player that are predicted, i.e. character lunge and weapon animation.
     /// </summary>
-    private const float DamageAnimationLength = 0.30f;
-    private const string DamageAnimationKey = "damage-effect";
-
-    private void InitializeEffect()
+    public override void DoLunge(EntityUid user, EntityUid weapon, Angle angle, Vector2 localPos, string? animation, bool predicted = true)
     {
-        SubscribeLocalEvent<DamageEffectComponent, AnimationCompletedEvent>(OnEffectAnimation);
-    }
+        if (!Timing.IsFirstTimePredicted)
+            return;
 
-    private void OnEffectAnimation(EntityUid uid, DamageEffectComponent component, AnimationCompletedEvent args)
-    {
-        if (TryComp<SpriteComponent>(uid, out var sprite))
+        var lunge = GetLungeAnimation(localPos);
+
+        // Stop any existing lunges on the user.
+        _animation.Stop(user, MeleeLungeKey);
+        _animation.Play(user, lunge, MeleeLungeKey);
+
+        if (localPos == Vector2.Zero || animation == null)
+            return;
+
+        if (!_xformQuery.TryGetComponent(user, out var userXform) || userXform.MapID == MapId.Nullspace)
+            return;
+
+        var animationUid = Spawn(animation, userXform.Coordinates);
+
+        if (!TryComp<SpriteComponent>(animationUid, out var sprite)
+            || !TryComp<WeaponArcVisualsComponent>(animationUid, out var arcComponent))
         {
-            sprite.Color = component.Color;
+            return;
         }
 
-        RemCompDeferred<DamageEffectComponent>(uid);
+        var spriteRotation = Angle.Zero;
+        if (arcComponent.Animation != WeaponArcAnimation.None
+            && TryComp(weapon, out MeleeWeaponComponent? meleeWeaponComponent))
+        {
+            if (user != weapon
+                && TryComp(weapon, out SpriteComponent? weaponSpriteComponent))
+                sprite.CopyFrom(weaponSpriteComponent);
+
+            spriteRotation = meleeWeaponComponent.WideAnimationRotation;
+
+            if (meleeWeaponComponent.SwingLeft)
+                angle *= -1;
+        }
+        sprite.Rotation = localPos.ToWorldAngle();
+        var distance = Math.Clamp(localPos.Length() / 2f, 0.2f, 1f);
+
+        var xform = _xformQuery.GetComponent(animationUid);
+        TrackUserComponent track;
+
+        switch (arcComponent.Animation)
+        {
+            case WeaponArcAnimation.Slash:
+                track = EnsureComp<TrackUserComponent>(animationUid);
+                track.User = user;
+                _animation.Play(animationUid, GetSlashAnimation(sprite, angle, spriteRotation), SlashAnimationKey);
+                if (arcComponent.Fadeout)
+                    _animation.Play(animationUid, GetFadeAnimation(sprite, 0.065f, 0.065f + 0.05f), FadeAnimationKey);
+                break;
+            case WeaponArcAnimation.Thrust:
+                track = EnsureComp<TrackUserComponent>(animationUid);
+                track.User = user;
+                _animation.Play(animationUid, GetThrustAnimation(sprite, distance, spriteRotation), ThrustAnimationKey);
+                if (arcComponent.Fadeout)
+                    _animation.Play(animationUid, GetFadeAnimation(sprite, 0.05f, 0.15f), FadeAnimationKey);
+                break;
+            case WeaponArcAnimation.None:
+                var (mapPos, mapRot) = TransformSystem.GetWorldPositionRotation(userXform);
+                var worldPos = mapPos + (mapRot - userXform.LocalRotation).RotateVec(localPos);
+                var newLocalPos = Vector2.Transform(worldPos, TransformSystem.GetInvWorldMatrix(xform.ParentUid));
+                TransformSystem.SetLocalPositionNoLerp(animationUid, newLocalPos, xform);
+                if (arcComponent.Fadeout)
+                    _animation.Play(animationUid, GetFadeAnimation(sprite, 0f, 0.15f), FadeAnimationKey);
+                break;
+        }
     }
 
-    /// <summary>
-    /// Gets the red effect animation whenever the server confirms something is hit
-    /// </summary>
-    private Animation? GetDamageAnimation(EntityUid uid, Color color, SpriteComponent? sprite = null)
+    private Animation GetSlashAnimation(SpriteComponent sprite, Angle arc, Angle spriteRotation)
     {
-        if (!Resolve(uid, ref sprite, false))
-            return null;
+        const float slashStart = 0.03f;
+        const float slashEnd = 0.065f;
+        const float length = slashEnd + 0.05f;
+        var startRotation = sprite.Rotation + arc / 2;
+        var endRotation = sprite.Rotation - arc / 2;
+        var startRotationOffset = startRotation.RotateVec(new Vector2(0f, -1f));
+        var endRotationOffset = endRotation.RotateVec(new Vector2(0f, -1f));
+        startRotation += spriteRotation;
+        endRotation += spriteRotation;
 
-        // 90% of them are going to be this so why allocate a new class.
-        return new Animation
+        return new Animation()
         {
-            Length = TimeSpan.FromSeconds(DamageAnimationLength),
+            Length = TimeSpan.FromSeconds(length),
             AnimationTracks =
             {
-                new AnimationTrackComponentProperty
+                new AnimationTrackComponentProperty()
+                {
+                    ComponentType = typeof(SpriteComponent),
+                    Property = nameof(SpriteComponent.Rotation),
+                    KeyFrames =
+                    {
+                        new AnimationTrackProperty.KeyFrame(startRotation, 0f),
+                        new AnimationTrackProperty.KeyFrame(startRotation, slashStart),
+                        new AnimationTrackProperty.KeyFrame(endRotation, slashEnd)
+                    }
+                },
+                new AnimationTrackComponentProperty()
+                {
+                    ComponentType = typeof(SpriteComponent),
+                    Property = nameof(SpriteComponent.Offset),
+                    KeyFrames =
+                    {
+                        new AnimationTrackProperty.KeyFrame(startRotationOffset, 0f),
+                        new AnimationTrackProperty.KeyFrame(startRotationOffset, slashStart),
+                        new AnimationTrackProperty.KeyFrame(endRotationOffset, slashEnd)
+                    }
+                },
+            }
+        };
+    }
+
+    private Animation GetThrustAnimation(SpriteComponent sprite, float distance, Angle spriteRotation)
+    {
+        const float thrustEnd = 0.05f;
+        const float length = 0.15f;
+        var startOffset = sprite.Rotation.RotateVec(new Vector2(0f, -distance / 5f));
+        var endOffset = sprite.Rotation.RotateVec(new Vector2(0f, -distance));
+
+        return new Animation()
+        {
+            Length = TimeSpan.FromSeconds(length),
+            AnimationTracks =
+            {
+                new AnimationTrackComponentProperty()
+                {
+                    ComponentType = typeof(SpriteComponent),
+                    Property = nameof(SpriteComponent.Offset),
+                    KeyFrames =
+                    {
+                        new AnimationTrackProperty.KeyFrame(startOffset, 0f),
+                        new AnimationTrackProperty.KeyFrame(endOffset, thrustEnd),
+                        new AnimationTrackProperty.KeyFrame(endOffset, length),
+                    }
+                },
+            }
+        };
+    }
+
+    private Animation GetFadeAnimation(SpriteComponent sprite, float start, float end)
+    {
+        return new Animation
+        {
+            Length = TimeSpan.FromSeconds(end),
+            AnimationTracks =
+            {
+                new AnimationTrackComponentProperty()
                 {
                     ComponentType = typeof(SpriteComponent),
                     Property = nameof(SpriteComponent.Color),
-                    InterpolationMode = AnimationInterpolationMode.Linear,
                     KeyFrames =
                     {
-                        new AnimationTrackProperty.KeyFrame(color * sprite.Color, 0f),
-                        new AnimationTrackProperty.KeyFrame(sprite.Color, DamageAnimationLength)
+                        new AnimationTrackProperty.KeyFrame(sprite.Color, start),
+                        new AnimationTrackProperty.KeyFrame(sprite.Color.WithAlpha(0f), end)
                     }
                 }
             }
         };
     }
 
-    private void OnDamageEffect(DamageEffectEvent ev)
+    /// <summary>
+    /// Get the sprite offset animation to use for mob lunges.
+    /// </summary>
+    private Animation GetLungeAnimation(Vector2 direction)
     {
-        var color = ev.Color;
+        const float length = 0.1f;
 
-        foreach (var ent in ev.Entities)
+        return new Animation
         {
-            if (Deleted(ent))
+            Length = TimeSpan.FromSeconds(length),
+            AnimationTracks =
             {
+                new AnimationTrackComponentProperty()
+                {
+                    ComponentType = typeof(SpriteComponent),
+                    Property = nameof(SpriteComponent.Offset),
+                    InterpolationMode = AnimationInterpolationMode.Linear,
+                    KeyFrames =
+                    {
+                        new AnimationTrackProperty.KeyFrame(direction.Normalized() * 0.15f, 0f),
+                        new AnimationTrackProperty.KeyFrame(Vector2.Zero, length)
+                    }
+                }
+            }
+        };
+    }
+
+    /// <summary>
+    /// Updates the effect positions to follow the user
+    /// </summary>
+    private void UpdateEffects()
+    {
+        var query = EntityQueryEnumerator<TrackUserComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out var arcComponent, out var xform))
+        {
+            if (arcComponent.User == null)
                 continue;
-            }
 
-            var player = EnsureComp<AnimationPlayerComponent>(ent);
-            player.NetSyncEnabled = false;
+            Vector2 targetPos = TransformSystem.GetWorldPosition(arcComponent.User.Value);
 
-            // Need to stop the existing animation first to ensure the sprite color is fixed.
-            // Otherwise we might lerp to a red colour instead.
-            if (_animation.HasRunningAnimation(ent, player, DamageAnimationKey))
+            if (arcComponent.Offset != Vector2.Zero)
             {
-                _animation.Stop(ent, player, DamageAnimationKey);
+                var entRotation = TransformSystem.GetWorldRotation(xform);
+                targetPos += entRotation.RotateVec(arcComponent.Offset);
             }
 
-            if (!TryComp<SpriteComponent>(ent, out var sprite))
-            {
-                continue;
-            }
-
-            if (TryComp<DamageEffectComponent>(ent, out var effect))
-            {
-                sprite.Color = effect.Color;
-            }
-
-            var animation = GetDamageAnimation(ent, color, sprite);
-
-            if (animation == null)
-                continue;
-
-            var comp = EnsureComp<DamageEffectComponent>(ent);
-            comp.NetSyncEnabled = false;
-            comp.Color = sprite.Color;
-            _animation.Play(player, animation, DamageAnimationKey);
+            TransformSystem.SetWorldPosition(uid, targetPos);
         }
     }
 }

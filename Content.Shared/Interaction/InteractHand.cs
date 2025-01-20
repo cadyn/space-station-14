@@ -1,4 +1,5 @@
 using JetBrains.Annotations;
+using Robust.Shared.Map;
 
 namespace Content.Shared.Interaction
 {
@@ -37,21 +38,16 @@ namespace Content.Shared.Interaction
         }
     }
 
-    public sealed class InteractNoHandEvent : HandledEntityEventArgs, ITargetedInteractEventArgs
+    /// <summary>
+    /// Raised on the user before interacting on an entity with bare hand.
+    /// Interaction is cancelled if this event is handled, so set it to true if you do custom interaction logic.
+    /// </summary>
+    public sealed class BeforeInteractHandEvent : HandledEntityEventArgs
     {
-        /// <summary>
-        ///     Entity that triggered the interaction.
-        /// </summary>
-        public EntityUid User { get; }
-
-        /// <summary>
-        ///     Entity that was interacted on.
-        /// </summary>
         public EntityUid Target { get; }
 
-        public InteractNoHandEvent(EntityUid user, EntityUid target)
+        public BeforeInteractHandEvent(EntityUid target)
         {
-            User = user;
             Target = target;
         }
     }

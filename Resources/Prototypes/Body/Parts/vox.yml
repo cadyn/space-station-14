@@ -15,6 +15,16 @@
         ents: []
   - type: StaticPrice
     price: 100
+  - type: Tag
+    tags:
+      - Trash
+  - type: Extractable
+    juiceSolution:
+      reagents:
+      - ReagentId: Fat
+        Quantity: 3
+      - ReagentId: Blood
+        Quantity: 10
 
 - type: entity
   id: TorsoVox
@@ -22,25 +32,20 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
-      state: "torso_m"
+      state: "torso"
     - type: Icon
       sprite: Mobs/Species/Vox/parts.rsi
-      state: "torso_m"
+      state: "torso"
     - type: BodyPart
       partType: Torso
-      size: 14
-      compatibility: Biological
-      mechanisms:
-        - OrganHumanHeart
-        - OrganVoxLungs
-        - OrganHumanStomach
-        - OrganHumanLiver
-        - OrganHumanKidneys
-      # TODO BODY DettachableDamageableComponent?
-#    criticalThreshold: 100
-#    deadThreshold: 150
+    - type: Extractable
+      juiceSolution:
+        reagents:
+        - ReagentId: Fat
+          Quantity: 3
+        - ReagentId: Blood
+          Quantity: 10
 
 - type: entity
   id: HeadVox
@@ -48,29 +53,26 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
-      state: "head_m"
+      state: "head"
     - type: Icon
       sprite: Mobs/Species/Vox/parts.rsi
-      state: "head_m"
+      state: "head"
     - type: BodyPart
       partType: Head
-      size: 7
-      compatibility: Biological
       vital: true
-      mechanisms:
-        - OrganHumanBrain
-        - OrganHumanEyes
-    #    criticalThreshold: 50
-    #    deadThreshold: 120
     - type: Input
       context: "ghost"
-    - type: MovementSpeedModifier
-      baseWalkSpeed: 0
-      baseSprintSpeed: 0
-    - type: InputMover
-    - type: GhostOnMove
+    - type: Tag
+      tags:
+        - Head
+    - type: Extractable
+      juiceSolution:
+        reagents:
+        - ReagentId: Fat
+          Quantity: 5
+        - ReagentId: Blood
+          Quantity: 10
 
 - type: entity
   id: LeftArmVox
@@ -78,7 +80,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "l_arm"
     - type: Icon
@@ -86,11 +87,7 @@
       state: "l_arm"
     - type: BodyPart
       partType: Arm
-      size: 5
-      compatibility: Biological
       symmetry: Left
-    #    criticalThreshold: 40
-    #    deadThreshold: 80
 
 - type: entity
   id: RightArmVox
@@ -98,7 +95,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "r_arm"
     - type: Icon
@@ -106,11 +102,7 @@
       state: "r_arm"
     - type: BodyPart
       partType: Arm
-      size: 5
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 40
-    #    deadThreshold: 80
 
 - type: entity
   id: LeftHandVox
@@ -118,7 +110,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "l_hand"
     - type: Icon
@@ -126,11 +117,7 @@
       state: "l_hand"
     - type: BodyPart
       partType: Hand
-      size: 3
-      compatibility: Biological
       symmetry: Left
-    #    criticalThreshold: 30
-    #    deadThreshold: 60
 
 - type: entity
   id: RightHandVox
@@ -138,7 +125,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "r_hand"
     - type: Icon
@@ -146,11 +132,7 @@
       state: "r_hand"
     - type: BodyPart
       partType: Hand
-      size: 3
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 30
-    #    deadThreshold: 60
 
 - type: entity
   id: LeftLegVox
@@ -158,7 +140,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "l_leg"
     - type: Icon
@@ -166,11 +147,8 @@
       state: "l_leg"
     - type: BodyPart
       partType: Leg
-      size: 6
-      compatibility: Biological
       symmetry: Left
-    #    criticalThreshold: 45
-    #    deadThreshold: 90
+    - type: MovementBodyPart
 
 - type: entity
   id: RightLegVox
@@ -178,7 +156,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "r_leg"
     - type: Icon
@@ -186,11 +163,8 @@
       state: "r_leg"
     - type: BodyPart
       partType: Leg
-      size: 6
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 45
-    #    deadThreshold: 90
+    - type: MovementBodyPart
 
 - type: entity
   id: LeftFootVox
@@ -198,7 +172,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "l_foot"
     - type: Icon
@@ -206,11 +179,7 @@
       state: "l_foot"
     - type: BodyPart
       partType: Foot
-      size: 2
-      compatibility: Biological
       symmetry: Left
-#    criticalThreshold: 30
-#    deadThreshold: 60
 
 - type: entity
   id: RightFootVox
@@ -218,7 +187,6 @@
   parent: PartVox
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Vox/parts.rsi
       state: "r_foot"
     - type: Icon
@@ -226,8 +194,4 @@
       state: "r_foot"
     - type: BodyPart
       partType: Foot
-      size: 2
-      compatibility: Biological
       symmetry: Right
-#    criticalThreshold: 30
-#    deadThreshold: 60

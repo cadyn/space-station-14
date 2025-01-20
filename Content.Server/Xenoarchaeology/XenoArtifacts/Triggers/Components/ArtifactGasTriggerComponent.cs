@@ -6,21 +6,20 @@ namespace Content.Server.Xenoarchaeology.XenoArtifacts.Triggers.Components;
 ///     Activates artifact when it surrounded by certain gas.
 /// </summary>
 [RegisterComponent]
-public sealed class ArtifactGasTriggerComponent : Component
+public sealed partial class ArtifactGasTriggerComponent : Component
 {
     /// <summary>
     ///     List of possible activation gases to pick on startup.
     /// </summary>
     [DataField("possibleGas")]
-    public Gas[] PossibleGases =
+    public List<Gas> PossibleGases = new()
     {
         Gas.Oxygen,
         Gas.Plasma,
         Gas.Nitrogen,
         Gas.CarbonDioxide,
-        Gas.Miasma,
-        Gas.NitrousOxide,
-        Gas.Frezon
+        Gas.Ammonia,
+        Gas.NitrousOxide
     };
 
     /// <summary>

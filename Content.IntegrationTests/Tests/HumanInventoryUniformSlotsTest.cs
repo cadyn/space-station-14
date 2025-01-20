@@ -1,8 +1,5 @@
-using System.Threading.Tasks;
 using Content.Shared.Inventory;
-using NUnit.Framework;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
 using Robust.Shared.Map;
 
 namespace Content.IntegrationTests.Tests
@@ -13,10 +10,11 @@ namespace Content.IntegrationTests.Tests
     [TestFixture]
     public sealed class HumanInventoryUniformSlotsTest
     {
+        [TestPrototypes]
         private const string Prototypes = @"
 - type: entity
-  name: HumanDummy
-  id: HumanDummy
+  name: HumanUniformDummy
+  id: HumanUniformDummy
   components:
   - type: Inventory
   - type: ContainerContainer
@@ -28,7 +26,7 @@ namespace Content.IntegrationTests.Tests
   - type: Clothing
     slots: [innerclothing]
   - type: Item
-    size: 5
+    size: Tiny
 
 - type: entity
   name: IDCardDummy
@@ -38,7 +36,7 @@ namespace Content.IntegrationTests.Tests
     slots:
     - idcard
   - type: Item
-    size: 5
+    size: Tiny
   - type: IdCard
 
 - type: entity
@@ -46,20 +44,22 @@ namespace Content.IntegrationTests.Tests
   id: FlashlightDummy
   components:
   - type: Item
-    size: 5
+    size: Tiny
 
 - type: entity
   name: ToolboxDummy
   id: ToolboxDummy
   components:
   - type: Item
-    size: 9999
+    size: Huge
 ";
         [Test]
         public async Task Test()
         {
-            await using var pairTracker = await PoolManager.GetServerClient(new PoolSettings{NoClient = true, ExtraPrototypes = Prototypes});
-            var server = pairTracker.Pair.Server;
+            await using var pair = await PoolManager.GetServerClient();
+            var server = pair.Server;
+            var testMap = await pair.CreateTestMap();
+            var coordinates = testMap.GridCoords;
 
             EntityUid human = default;
             EntityUid uniform = default;
@@ -67,38 +67,46 @@ namespace Content.IntegrationTests.Tests
             EntityUid pocketItem = default;
 
             InventorySystem invSystem = default!;
+            var mapMan = server.ResolveDependency<IMapManager>();
+            var entityMan = server.ResolveDependency<IEntityManager>();
 
             await server.WaitAssertion(() =>
             {
-                invSystem = IoCManager.Resolve<IEntitySystemManager>().GetEntitySystem<InventorySystem>();
-                var mapMan = IoCManager.Resolve<IMapManager>();
+                invSystem = entityMan.System<InventorySystem>();
 
-                mapMan.CreateNewMapEntity(MapId.Nullspace);
-
-                var entityMan = IoCManager.Resolve<IEntityManager>();
-
-                human = entityMan.SpawnEntity("HumanDummy", MapCoordinates.Nullspace);
-                uniform = entityMan.SpawnEntity("UniformDummy", MapCoordinates.Nullspace);
-                idCard = entityMan.SpawnEntity("IDCardDummy", MapCoordinates.Nullspace);
-                pocketItem = entityMan.SpawnEntity("FlashlightDummy", MapCoordinates.Nullspace);
-                var tooBigItem = entityMan.SpawnEntity("ToolboxDummy", MapCoordinates.Nullspace);
+                human = entityMan.SpawnEntity("HumanUniformDummy", coordinates);
+                uniform = entityMan.SpawnEntity("UniformDummy", coordinates);
+                idCard = entityMan.SpawnEntity("IDCardDummy", coordinates);
+                pocketItem = entityMan.SpawnEntity("FlashlightDummy", coordinates);
+                var tooBigItem = entityMan.SpawnEntity("ToolboxDummy", coordinates);
 
 
-                Assert.That(invSystem.CanEquip(human, uniform, "jumpsuit", out _));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(invSystem.CanEquip(human, uniform, "jumpsuit", out _));
 
-                // Can't equip any of these since no uniform!
-                Assert.That(invSystem.CanEquip(human, idCard, "id", out _), Is.False);
-                Assert.That(invSystem.CanEquip(human, pocketItem, "pocket1", out _), Is.False);
-                Assert.That(invSystem.CanEquip(human, tooBigItem, "pocket2", out _), Is.False); // This one fails either way.
+                    // Can't equip any of these since no uniform!
+                    Assert.That(invSystem.CanEquip(human, idCard, "id", out _), Is.False);
+                    Assert.That(invSystem.CanEquip(human, pocketItem, "pocket1", out _), Is.False);
+                    Assert.That(invSystem.CanEquip(human, tooBigItem, "pocket2", out _), Is.False); // This one fails either way.
+                });
 
-                Assert.That(invSystem.TryEquip(human, uniform, "jumpsuit"));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(invSystem.TryEquip(human, uniform, "jumpsuit"));
+                    Assert.That(invSystem.TryEquip(human, idCard, "id"));
+                });
 
-                Assert.That(invSystem.TryEquip(human, idCard, "id"));
+#pragma warning disable NUnit2045
                 Assert.That(invSystem.CanEquip(human, tooBigItem, "pocket1", out _), Is.False); // Still failing!
                 Assert.That(invSystem.TryEquip(human, pocketItem, "pocket1"));
+#pragma warning restore NUnit2045
 
-                Assert.That(IsDescendant(idCard, human));
-                Assert.That(IsDescendant(pocketItem, human));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(IsDescendant(idCard, human, entityMan));
+                    Assert.That(IsDescendant(pocketItem, human, entityMan));
+                });
 
                 // Now drop the jumpsuit.
                 Assert.That(invSystem.TryUnequip(human, "jumpsuit"));
@@ -108,31 +116,37 @@ namespace Content.IntegrationTests.Tests
 
             await server.WaitAssertion(() =>
             {
-                // Items have been dropped!
-                Assert.That(IsDescendant(uniform, human), Is.False);
-                Assert.That(IsDescendant(idCard, human), Is.False);
-                Assert.That(IsDescendant(pocketItem, human), Is.False);
+                Assert.Multiple(() =>
+                {
+                    // Items have been dropped!
+                    Assert.That(IsDescendant(uniform, human, entityMan), Is.False);
+                    Assert.That(IsDescendant(idCard, human, entityMan), Is.False);
+                    Assert.That(IsDescendant(pocketItem, human, entityMan), Is.False);
 
-                // Ensure everything null here.
-                Assert.That(!invSystem.TryGetSlotEntity(human, "jumpsuit", out _));
-                Assert.That(!invSystem.TryGetSlotEntity(human, "id", out _));
-                Assert.That(!invSystem.TryGetSlotEntity(human, "pocket1", out _));
+                    // Ensure everything null here.
+                    Assert.That(!invSystem.TryGetSlotEntity(human, "jumpsuit", out _));
+                    Assert.That(!invSystem.TryGetSlotEntity(human, "id", out _));
+                    Assert.That(!invSystem.TryGetSlotEntity(human, "pocket1", out _));
+                });
+
+                mapMan.DeleteMap(testMap.MapId);
             });
 
-            await pairTracker.CleanReturnAsync();
+            await pair.CleanReturnAsync();
         }
 
-        private static bool IsDescendant(EntityUid descendant, EntityUid parent)
+        private static bool IsDescendant(EntityUid descendant, EntityUid parent, IEntityManager entManager)
         {
-            var tmpParent = IoCManager.Resolve<IEntityManager>().GetComponent<TransformComponent>(descendant).Parent;
-            while (tmpParent != null)
+            var xforms = entManager.GetEntityQuery<TransformComponent>();
+            var tmpParent = xforms.GetComponent(descendant).ParentUid;
+            while (tmpParent.IsValid())
             {
-                if (tmpParent.Owner == parent)
+                if (tmpParent == parent)
                 {
                     return true;
                 }
 
-                tmpParent = tmpParent.Parent;
+                tmpParent = xforms.GetComponent(tmpParent).ParentUid;
             }
 
             return false;

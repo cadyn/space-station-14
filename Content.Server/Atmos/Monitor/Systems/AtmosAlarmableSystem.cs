@@ -6,9 +6,13 @@ using Content.Server.DeviceNetwork.Components;
 using Content.Server.DeviceNetwork.Systems;
 using Content.Server.Power.Components;
 using Content.Shared.Atmos.Monitor;
+using Content.Shared.DeviceNetwork;
+using Content.Shared.Power;
 using Content.Shared.Tag;
+using Robust.Server.Audio;
 using Robust.Server.GameObjects;
 using Robust.Shared.Audio;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Utility;
 
 namespace Content.Server.Atmos.Monitor.Systems;
@@ -56,7 +60,7 @@ public sealed class AtmosAlarmableSystem : EntitySystem
             false);
     }
 
-    private void OnPowerChange(EntityUid uid, AtmosAlarmableComponent component, PowerChangedEvent args)
+    private void OnPowerChange(EntityUid uid, AtmosAlarmableComponent component, ref PowerChangedEvent args)
     {
         if (!args.Powered)
         {
@@ -84,7 +88,7 @@ public sealed class AtmosAlarmableSystem : EntitySystem
             return;
 
         if (!args.Data.TryGetValue(DeviceNetworkConstants.Command, out string? cmd)
-            || !args.Data.TryGetValue(AlertSource, out HashSet<string>? sourceTags))
+            || !args.Data.TryGetValue(AlertSource, out HashSet<ProtoId<TagPrototype>>? sourceTags))
         {
             return;
         }
@@ -243,7 +247,7 @@ public sealed class AtmosAlarmableSystem : EntitySystem
     /// <param name="alarmable"></param>
     public void Reset(EntityUid uid, AtmosAlarmableComponent? alarmable = null, TagComponent? tags = null)
     {
-        if (!Resolve(uid, ref alarmable, ref tags) || alarmable.LastAlarmState == AtmosAlarmType.Normal)
+        if (!Resolve(uid, ref alarmable, ref tags, false) || alarmable.LastAlarmState == AtmosAlarmType.Normal)
         {
             return;
         }
@@ -285,7 +289,7 @@ public sealed class AtmosAlarmableSystem : EntitySystem
     {
         alarm = null;
 
-        if (!Resolve(uid, ref alarmable))
+        if (!Resolve(uid, ref alarmable, false))
         {
             return false;
         }

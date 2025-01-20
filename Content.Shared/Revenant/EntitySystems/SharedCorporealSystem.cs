@@ -3,6 +3,7 @@ using Robust.Shared.Physics;
 using System.Linq;
 using Content.Shared.Movement.Systems;
 using Content.Shared.Revenant.Components;
+using Robust.Shared.Physics.Systems;
 
 namespace Content.Shared.Revenant.EntitySystems;
 
@@ -15,6 +16,7 @@ public abstract class SharedCorporealSystem : EntitySystem
 {
     [Dependency] private readonly SharedAppearanceSystem _appearance = default!;
     [Dependency] private readonly MovementSpeedModifierSystem _movement = default!;
+    [Dependency] private readonly SharedPhysicsSystem _physics = default!;
 
     public override void Initialize()
     {
@@ -36,10 +38,10 @@ public abstract class SharedCorporealSystem : EntitySystem
 
         if (TryComp<FixturesComponent>(uid, out var fixtures) && fixtures.FixtureCount >= 1)
         {
-            var fixture = fixtures.Fixtures.Values.First();
+            var fixture = fixtures.Fixtures.First();
 
-            fixture.CollisionMask = (int) (CollisionGroup.SmallMobMask | CollisionGroup.GhostImpassable);
-            fixture.CollisionLayer = (int) CollisionGroup.SmallMobLayer;
+            _physics.SetCollisionMask(uid, fixture.Key, fixture.Value, (int) (CollisionGroup.SmallMobMask | CollisionGroup.GhostImpassable), fixtures);
+            _physics.SetCollisionLayer(uid, fixture.Key, fixture.Value, (int) CollisionGroup.SmallMobLayer, fixtures);
         }
         _movement.RefreshMovementSpeedModifiers(uid);
     }
@@ -50,10 +52,10 @@ public abstract class SharedCorporealSystem : EntitySystem
 
         if (TryComp<FixturesComponent>(uid, out var fixtures) && fixtures.FixtureCount >= 1)
         {
-            var fixture = fixtures.Fixtures.Values.First();
+            var fixture = fixtures.Fixtures.First();
 
-            fixture.CollisionMask = (int) CollisionGroup.GhostImpassable;
-            fixture.CollisionLayer = 0;
+            _physics.SetCollisionMask(uid, fixture.Key, fixture.Value, (int) CollisionGroup.GhostImpassable, fixtures);
+            _physics.SetCollisionLayer(uid, fixture.Key, fixture.Value, 0, fixtures);
         }
         component.MovementSpeedDebuff = 1; //just so we can avoid annoying code elsewhere
         _movement.RefreshMovementSpeedModifiers(uid);

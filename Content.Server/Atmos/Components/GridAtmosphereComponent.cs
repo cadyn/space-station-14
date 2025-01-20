@@ -1,7 +1,7 @@
 using Content.Server.Atmos.EntitySystems;
 using Content.Server.Atmos.Piping.Components;
+using Content.Server.Atmos.Serialization;
 using Content.Server.NodeContainer.NodeGroups;
-using Robust.Shared.Serialization;
 
 namespace Content.Server.Atmos.Components
 {
@@ -10,7 +10,7 @@ namespace Content.Server.Atmos.Components
     /// </summary>
     [RegisterComponent, Serializable,
      Access(typeof(AtmosphereSystem), typeof(GasTileOverlaySystem), typeof(AtmosDebugOverlaySystem))]
-    public sealed class GridAtmosphereComponent : Component, ISerializationHooks
+    public sealed partial class GridAtmosphereComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
         public bool Simulated { get; set; } = true;
@@ -24,14 +24,12 @@ namespace Content.Server.Atmos.Components
         [ViewVariables]
         public int UpdateCounter { get; set; } = 1; // DO NOT SET TO ZERO BY DEFAULT! It will break roundstart atmos...
 
-        [DataField("uniqueMixes")]
-        public List<GasMixture>? UniqueMixes;
-
-        [DataField("tiles")]
-        public Dictionary<Vector2i, int>? TilesUniqueMixes;
+        [ViewVariables]
+        [IncludeDataField(customTypeSerializer:typeof(TileAtmosCollectionSerializer))]
+        public Dictionary<Vector2i, TileAtmosphere> Tiles = new(1000);
 
         [ViewVariables]
-        public readonly Dictionary<Vector2i, TileAtmosphere> Tiles = new(1000);
+        public HashSet<TileAtmosphere> MapTiles = new(1000);
 
         [ViewVariables]
         public readonly HashSet<TileAtmosphere> ActiveTiles = new(1000);
@@ -67,25 +65,28 @@ namespace Content.Server.Atmos.Components
         public readonly HashSet<IPipeNet> PipeNets = new();
 
         [ViewVariables]
-        public readonly HashSet<AtmosDeviceComponent> AtmosDevices = new();
+        public readonly HashSet<Entity<AtmosDeviceComponent>> AtmosDevices = new();
 
         [ViewVariables]
-        public Queue<TileAtmosphere> CurrentRunTiles = new();
+        public readonly Queue<TileAtmosphere> CurrentRunTiles = new();
 
         [ViewVariables]
-        public Queue<ExcitedGroup> CurrentRunExcitedGroups = new();
+        public readonly Queue<ExcitedGroup> CurrentRunExcitedGroups = new();
 
         [ViewVariables]
-        public Queue<IPipeNet> CurrentRunPipeNet = new();
+        public readonly Queue<IPipeNet> CurrentRunPipeNet = new();
 
         [ViewVariables]
-        public Queue<AtmosDeviceComponent> CurrentRunAtmosDevices = new();
+        public readonly Queue<Entity<AtmosDeviceComponent>> CurrentRunAtmosDevices = new();
 
         [ViewVariables]
         public readonly HashSet<Vector2i> InvalidatedCoords = new(1000);
 
         [ViewVariables]
-        public Queue<Vector2i> CurrentRunInvalidatedCoordinates = new();
+        public readonly Queue<TileAtmosphere> CurrentRunInvalidatedTiles = new();
+
+        [ViewVariables]
+        public readonly List<TileAtmosphere> PossiblyDisconnectedTiles = new(100);
 
         [ViewVariables]
         public int InvalidatedCoordsCount => InvalidatedCoords.Count;
@@ -95,34 +96,5 @@ namespace Content.Server.Atmos.Components
 
         [ViewVariables]
         public AtmosphereProcessingState State { get; set; } = AtmosphereProcessingState.Revalidate;
-
-        void ISerializationHooks.BeforeSerialization()
-        {
-            var uniqueMixes = new List<GasMixture>();
-            var uniqueMixHash = new Dictionary<GasMixture, int>();
-            var tiles = new Dictionary<Vector2i, int>();
-
-            foreach (var (indices, tile) in Tiles)
-            {
-                if (tile.Air == null) continue;
-
-                if (uniqueMixHash.TryGetValue(tile.Air, out var index))
-                {
-                    tiles[indices] = index;
-                    continue;
-                }
-
-                uniqueMixes.Add(tile.Air);
-                var newIndex = uniqueMixes.Count - 1;
-                uniqueMixHash[tile.Air] = newIndex;
-                tiles[indices] = newIndex;
-            }
-
-            if (uniqueMixes.Count == 0) uniqueMixes = null;
-            if (tiles.Count == 0) tiles = null;
-
-            UniqueMixes = uniqueMixes;
-            TilesUniqueMixes = tiles;
-        }
     }
 }

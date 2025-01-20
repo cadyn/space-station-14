@@ -1,13 +1,16 @@
 using System.Linq;
+using Content.Server.Administration;
+using Content.Server.GameTicking;
 using Content.Server.GameTicking.Rules;
-using Content.Server.GameTicking.Rules.Configurations;
-using Content.Shared.CCVar;
-using Content.Shared.GameTicking;
+using Content.Server.StationEvents.Components;
+using Content.Shared.Administration;
+using Content.Shared.EntityTable;
+using Content.Shared.GameTicking.Components;
 using JetBrains.Annotations;
-using Robust.Server.Player;
-using Robust.Shared.Configuration;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Random;
+using Robust.Shared.Toolshed;
+using Robust.Shared.Utility;
 
 namespace Content.Server.StationEvents
 {
@@ -16,236 +19,194 @@ namespace Content.Server.StationEvents
     ///     game presets use.
     /// </summary>
     [UsedImplicitly]
-    public sealed class BasicStationEventSchedulerSystem : GameRuleSystem
+    public sealed class BasicStationEventSchedulerSystem : GameRuleSystem<BasicStationEventSchedulerComponent>
     {
-        public override string Prototype => "BasicStationEventScheduler";
-
-        [Dependency] private readonly IConfigurationManager _configurationManager = default!;
-        [Dependency] private readonly IPlayerManager _playerManager = default!;
         [Dependency] private readonly IRobustRandom _random = default!;
-        [Dependency] private readonly IPrototypeManager _prototype = default!;
+        [Dependency] private readonly EventManagerSystem _event = default!;
 
-        private const float MinimumTimeUntilFirstEvent = 300;
-        private ISawmill _sawmill = default!;
-
-        /// <summary>
-        /// How long until the next check for an event runs
-        /// </summary>
-        /// Default value is how long until first event is allowed
-        private float _timeUntilNextEvent = MinimumTimeUntilFirstEvent;
-
-        public override void Initialize()
+        protected override void Started(EntityUid uid, BasicStationEventSchedulerComponent component, GameRuleComponent gameRule,
+            GameRuleStartedEvent args)
         {
-            base.Initialize();
-
-            _sawmill = Logger.GetSawmill("basicevents");
-
-            // Can't just check debug / release for a default given mappers need to use release mode
-            // As such we'll always pause it by default.
-            _configurationManager.OnValueChanged(CCVars.EventsEnabled, SetEnabled, true);
-
-            SubscribeLocalEvent<RoundRestartCleanupEvent>(Reset);
+            // A little starting variance so schedulers dont all proc at once.
+            component.TimeUntilNextEvent = RobustRandom.NextFloat(component.MinimumTimeUntilFirstEvent, component.MinimumTimeUntilFirstEvent + 120);
         }
 
-        public override void Shutdown()
+        protected override void Ended(EntityUid uid, BasicStationEventSchedulerComponent component, GameRuleComponent gameRule,
+            GameRuleEndedEvent args)
         {
-            base.Shutdown();
-            _configurationManager.UnsubValueChanged(CCVars.EventsEnabled, SetEnabled);
+            component.TimeUntilNextEvent = component.MinimumTimeUntilFirstEvent;
         }
 
-        public bool EventsEnabled { get; private set; }
-        private void SetEnabled(bool value) => EventsEnabled = value;
-
-        public override void Started() { }
-        public override void Ended() { }
-
-        /// <summary>
-        /// Randomly run a valid event <b>immediately</b>, ignoring earlieststart or whether the event is enabled
-        /// </summary>
-        /// <returns></returns>
-        public string RunRandomEvent()
-        {
-            var randomEvent = PickRandomEvent();
-
-            if (randomEvent == null
-                || !_prototype.TryIndex<GameRulePrototype>(randomEvent.Id, out var proto))
-            {
-                return Loc.GetString("station-event-system-run-random-event-no-valid-events");
-            }
-
-            GameTicker.AddGameRule(proto);
-            return Loc.GetString("station-event-system-run-event",("eventName", randomEvent.Id));
-        }
-
-        /// <summary>
-        /// Randomly picks a valid event.
-        /// </summary>
-        public StationEventRuleConfiguration? PickRandomEvent()
-        {
-            var availableEvents = AvailableEvents(true);
-            return FindEvent(availableEvents);
-        }
 
         public override void Update(float frameTime)
         {
             base.Update(frameTime);
 
-            if (!RuleStarted || !EventsEnabled)
+            if (!_event.EventsEnabled)
                 return;
 
-            if (_timeUntilNextEvent > 0)
+            var query = EntityQueryEnumerator<BasicStationEventSchedulerComponent, GameRuleComponent>();
+            while (query.MoveNext(out var uid, out var eventScheduler, out var gameRule))
             {
-                _timeUntilNextEvent -= frameTime;
-                return;
-            }
+                if (!GameTicker.IsGameRuleActive(uid, gameRule))
+                    continue;
 
-            // No point hammering this trying to find events if none are available
-            var stationEvent = FindEvent(AvailableEvents());
-            if (stationEvent == null
-                || !_prototype.TryIndex<GameRulePrototype>(stationEvent.Id, out var proto))
-            {
-                return;
-            }
+                if (eventScheduler.TimeUntilNextEvent > 0)
+                {
+                    eventScheduler.TimeUntilNextEvent -= frameTime;
+                    continue;
+                }
 
-            GameTicker.AddGameRule(proto);
-            ResetTimer();
-            _sawmill.Info($"Started event {proto.ID}. Next event in {_timeUntilNextEvent} seconds");
+                _event.RunRandomEvent(eventScheduler.ScheduledGameRules);
+                ResetTimer(eventScheduler);
+            }
         }
 
         /// <summary>
         /// Reset the event timer once the event is done.
         /// </summary>
-        private void ResetTimer()
+        private void ResetTimer(BasicStationEventSchedulerComponent component)
         {
-            // 5 - 25 minutes. TG does 3-10 but that's pretty frequent
-            _timeUntilNextEvent = _random.Next(300, 1500);
+            component.TimeUntilNextEvent = component.MinMaxEventTiming.Next(_random);
         }
+    }
+
+    [ToolshedCommand, AdminCommand(AdminFlags.Debug)]
+    public sealed class StationEventCommand : ToolshedCommand
+    {
+        private EventManagerSystem? _stationEvent;
+        private EntityTableSystem? _entityTable;
+        private IComponentFactory? _compFac;
+        private IRobustRandom? _random;
 
         /// <summary>
-        /// Pick a random event from the available events at this time, also considering their weightings.
+        ///     Estimates the expected number of times an event will run over the course of X rounds, taking into account weights and
+        ///     how many events are expected to run over a given timeframe for a given playercount by repeatedly simulating rounds.
+        ///     Effectively /100 (if you put 100 rounds) = probability an event will run per round.
         /// </summary>
-        /// <returns></returns>
-        private StationEventRuleConfiguration? FindEvent(List<StationEventRuleConfiguration> availableEvents)
+        /// <remarks>
+        ///     This isn't perfect. Code path eventually goes into <see cref="EventManagerSystem.CanRun"/>, which requires
+        ///     state from <see cref="GameTicker"/>. As a result, you should probably just run this locally and not doing
+        ///     a real round (it won't pollute the state, but it will get contaminated by previously ran events in the actual round)
+        ///     and things like `MaxOccurrences` and `ReoccurrenceDelay` won't be respected.
+        ///
+        ///     I consider these to not be that relevant to the analysis here though (and I don't want most uses of them
+        ///     to even exist) so I think it's fine.
+        /// </remarks>
+        [CommandImplementation("simulate")]
+        public IEnumerable<(string, float)> Simulate(EntityPrototype eventScheduler, int rounds, int playerCount, float roundEndMean, float roundEndStdDev)
         {
-            if (availableEvents.Count == 0)
+            _stationEvent ??= GetSys<EventManagerSystem>();
+            _entityTable ??= GetSys<EntityTableSystem>();
+            _compFac ??= IoCManager.Resolve<IComponentFactory>();
+            _random ??= IoCManager.Resolve<IRobustRandom>();
+
+            var occurrences = new Dictionary<string, int>();
+
+            foreach (var ev in _stationEvent.AllEvents())
             {
-                return null;
+                occurrences.Add(ev.Key.ID, 0);
             }
 
-            var sumOfWeights = 0;
-
-            foreach (var stationEvent in availableEvents)
+            if (!eventScheduler.TryGetComponent<BasicStationEventSchedulerComponent>(out var basicScheduler, _compFac))
             {
-                sumOfWeights += (int) stationEvent.Weight;
+                return occurrences.Select(p => (p.Key, (float)p.Value)).OrderByDescending(p => p.Item2);
             }
 
-            sumOfWeights = _random.Next(sumOfWeights);
+            var compMinMax = basicScheduler.MinMaxEventTiming; // we gotta do this since we cant execute on comp w/o an ent.
 
-            foreach (var stationEvent in availableEvents)
+            for (var i = 0; i < rounds; i++)
             {
-                sumOfWeights -= (int) stationEvent.Weight;
-
-                if (sumOfWeights <= 0)
-                {
-                    return stationEvent;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Gets the events that have met their player count, time-until start, etc.
-        /// </summary>
-        /// <param name="ignoreEarliestStart"></param>
-        /// <returns></returns>
-        private List<StationEventRuleConfiguration> AvailableEvents(bool ignoreEarliestStart = false)
-        {
-            TimeSpan currentTime;
-            var playerCount = _playerManager.PlayerCount;
-
-            // playerCount does a lock so we'll just keep the variable here
-            if (!ignoreEarliestStart)
-            {
-                currentTime = GameTicker.RoundDuration();
-            }
-            else
-            {
-                currentTime = TimeSpan.Zero;
-            }
-
-            var result = new List<StationEventRuleConfiguration>();
-
-            foreach (var stationEvent in AllEvents())
-            {
-                if (CanRun(stationEvent, playerCount, currentTime))
-                {
-                    result.Add(stationEvent);
-                }
-            }
-
-            return result;
-        }
-
-        private IEnumerable<StationEventRuleConfiguration> AllEvents()
-        {
-            return _prototype.EnumeratePrototypes<GameRulePrototype>()
-                .Where(p => p.Configuration is StationEventRuleConfiguration)
-                .Select(p => (StationEventRuleConfiguration) p.Configuration);
-        }
-
-        private int GetOccurrences(StationEventRuleConfiguration stationEvent)
-        {
-            return GameTicker.AllPreviousGameRules.Count(p => p.Item2.ID == stationEvent.Id);
-        }
-
-        public TimeSpan TimeSinceLastEvent(StationEventRuleConfiguration? stationEvent)
-        {
-            foreach (var (time, rule) in GameTicker.AllPreviousGameRules.Reverse())
-            {
-                if (rule.Configuration is not StationEventRuleConfiguration)
+                var curTime = TimeSpan.Zero;
+                var randomEndTime = _random.NextGaussian(roundEndMean, roundEndStdDev) * 60; // *60 = minutes to seconds
+                if (randomEndTime <= 0)
                     continue;
 
-                if (stationEvent == null || rule.ID == stationEvent.Id)
-                    return time;
+                while (curTime.TotalSeconds < randomEndTime)
+                {
+                    // sim an event
+                    curTime += TimeSpan.FromSeconds(compMinMax.Next(_random));
+
+                    if (!_stationEvent.TryBuildLimitedEvents(basicScheduler.ScheduledGameRules, out var selectedEvents))
+                    {
+                        continue; // doesnt break because maybe the time is preventing events being available.
+                    }
+                    var available = _stationEvent.AvailableEvents(false, playerCount, curTime);
+                    var plausibleEvents = new Dictionary<EntityPrototype, StationEventComponent>(available.Intersect(selectedEvents)); // C# makes me sad
+
+                    var ev = _stationEvent.FindEvent(plausibleEvents);
+                    if (ev == null)
+                        continue;
+
+                    occurrences[ev] += 1;
+                }
             }
 
-            return TimeSpan.Zero;
+            return occurrences.Select(p => (p.Key, (float) p.Value)).OrderByDescending(p => p.Item2);
         }
 
-        private bool CanRun(StationEventRuleConfiguration stationEvent, int playerCount, TimeSpan currentTime)
+        [CommandImplementation("lsprob")]
+        public IEnumerable<(string, float)> LsProb(EntityPrototype eventScheduler)
         {
-            if (GameTicker.IsGameRuleStarted(stationEvent.Id))
-                return false;
+            _compFac ??= IoCManager.Resolve<IComponentFactory>();
+            _stationEvent ??= GetSys<EventManagerSystem>();
 
-            if (stationEvent.MaxOccurrences.HasValue && GetOccurrences(stationEvent) >= stationEvent.MaxOccurrences.Value)
+            if (!eventScheduler.TryGetComponent<BasicStationEventSchedulerComponent>(out var basicScheduler, _compFac))
+                yield break;
+
+            if (!_stationEvent.TryBuildLimitedEvents(basicScheduler.ScheduledGameRules, out var events))
+                yield break;
+
+            var totalWeight = events.Sum(x => x.Value.Weight); // Well this shit definitely isnt correct now, and I see no way to make it correct.
+                                                               // Its probably *fine* but it wont be accurate if the EntityTableSelector does any subsetting.
+            foreach (var (proto, comp) in events)              // The only solution I see is to do a simulation, and we already have that, so...!
             {
-                return false;
+                yield return (proto.ID, comp.Weight / totalWeight);
             }
-
-            if (playerCount < stationEvent.MinimumPlayers)
-            {
-                return false;
-            }
-
-            if (currentTime != TimeSpan.Zero && currentTime.TotalMinutes < stationEvent.EarliestStart)
-            {
-                return false;
-            }
-
-            var lastRun = TimeSinceLastEvent(stationEvent);
-            if (lastRun != TimeSpan.Zero && currentTime.TotalMinutes <
-                stationEvent.ReoccurrenceDelay + lastRun.TotalMinutes)
-            {
-                return false;
-            }
-
-            return true;
         }
 
-        private void Reset(RoundRestartCleanupEvent ev)
+        [CommandImplementation("lsprobtime")]
+        public IEnumerable<(string, float)> LsProbTime(EntityPrototype eventScheduler, float time)
         {
-            _timeUntilNextEvent = MinimumTimeUntilFirstEvent;
+            _compFac ??= IoCManager.Resolve<IComponentFactory>();
+            _stationEvent ??= GetSys<EventManagerSystem>();
+
+            if (!eventScheduler.TryGetComponent<BasicStationEventSchedulerComponent>(out var basicScheduler, _compFac))
+                yield break;
+
+            if (!_stationEvent.TryBuildLimitedEvents(basicScheduler.ScheduledGameRules, out var untimedEvents))
+                yield break;
+
+            var events = untimedEvents.Where(pair => pair.Value.EarliestStart <= time).ToList();
+
+            var totalWeight = events.Sum(x => x.Value.Weight); // same subsetting issue as lsprob.
+
+            foreach (var (proto, comp) in events)
+            {
+                yield return (proto.ID, comp.Weight / totalWeight);
+            }
+        }
+
+        [CommandImplementation("prob")]
+        public float Prob(EntityPrototype eventScheduler, string eventId)
+        {
+            _compFac ??= IoCManager.Resolve<IComponentFactory>();
+            _stationEvent ??= GetSys<EventManagerSystem>();
+
+            if (!eventScheduler.TryGetComponent<BasicStationEventSchedulerComponent>(out var basicScheduler, _compFac))
+                return 0f;
+
+            if (!_stationEvent.TryBuildLimitedEvents(basicScheduler.ScheduledGameRules, out var events))
+                return 0f;
+
+            var totalWeight = events.Sum(x => x.Value.Weight); // same subsetting issue as lsprob.
+            var weight = 0f;
+            if (events.TryFirstOrNull(p => p.Key.ID == eventId, out var pair))
+            {
+                weight = pair.Value.Value.Weight;
+            }
+
+            return weight / totalWeight;
         }
     }
 }

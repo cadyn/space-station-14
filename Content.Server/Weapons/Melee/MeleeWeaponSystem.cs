@@ -1,338 +1,127 @@
-using System.Linq;
-using Content.Server.Actions.Events;
-using Content.Server.Administration.Components;
-using Content.Server.Administration.Logs;
-using Content.Server.Body.Components;
-using Content.Server.Body.Systems;
-using Content.Server.Chemistry.Components;
-using Content.Server.Chemistry.EntitySystems;
-using Content.Server.CombatMode;
+using Content.Server.Chat.Systems;
 using Content.Server.CombatMode.Disarm;
-using Content.Server.Contests;
-using Content.Server.Damage.Systems;
-using Content.Server.Examine;
-using Content.Server.Hands.Components;
-using Content.Server.Weapons.Melee.Components;
-using Content.Server.Weapons.Melee.Events;
+using Content.Server.Movement.Systems;
+using Content.Shared.Actions.Events;
+using Content.Shared.Administration.Components;
 using Content.Shared.CombatMode;
-using Content.Shared.Damage;
+using Content.Shared.Damage.Events;
+using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
-using Content.Shared.FixedPoint;
+using Content.Shared.Effects;
+using Content.Shared.Hands.Components;
 using Content.Shared.IdentityManagement;
-using Content.Shared.Interaction;
-using Content.Shared.Physics;
-using Content.Shared.Verbs;
+using Content.Shared.Mobs.Systems;
+using Content.Shared.Popups;
+using Content.Shared.Speech.Components;
+using Content.Shared.StatusEffect;
 using Content.Shared.Weapons.Melee;
 using Content.Shared.Weapons.Melee.Events;
 using Robust.Shared.Audio;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Map;
-using Robust.Shared.Physics;
-using Robust.Shared.Physics.Systems;
 using Robust.Shared.Player;
-using Robust.Shared.Prototypes;
 using Robust.Shared.Random;
+using System.Linq;
+using System.Numerics;
 
 namespace Content.Server.Weapons.Melee;
 
 public sealed class MeleeWeaponSystem : SharedMeleeWeaponSystem
 {
-    [Dependency] private readonly IAdminLogManager _adminLogger = default!;
-    [Dependency] private readonly IPrototypeManager _protoManager = default!;
+    [Dependency] private readonly SharedAudioSystem _audio = default!;
     [Dependency] private readonly IRobustRandom _random = default!;
-    [Dependency] private readonly BloodstreamSystem _bloodstream = default!;
-    [Dependency] private readonly ContestsSystem _contests = default!;
-    [Dependency] private readonly DamageableSystem _damageable = default!;
-    [Dependency] private readonly ExamineSystem _examine = default!;
-    [Dependency] private readonly SharedInteractionSystem _interaction = default!;
-    [Dependency] private readonly SharedPhysicsSystem _physics = default!;
-    [Dependency] private readonly SolutionContainerSystem _solutions = default!;
-    [Dependency] private readonly StaminaSystem _stamina = default!;
-
-    public const float DamagePitchVariation = 0.05f;
-
-    private const int AttackMask = (int) (CollisionGroup.MobMask | CollisionGroup.Opaque);
+    [Dependency] private readonly ChatSystem _chat = default!;
+    [Dependency] private readonly DamageExamineSystem _damageExamine = default!;
+    [Dependency] private readonly LagCompensationSystem _lag = default!;
+    [Dependency] private readonly MobStateSystem _mobState = default!;
+    [Dependency] private readonly SharedColorFlashEffectSystem _color = default!;
 
     public override void Initialize()
     {
         base.Initialize();
-        SubscribeLocalEvent<MeleeChemicalInjectorComponent, MeleeHitEvent>(OnChemicalInjectorHit);
-        SubscribeLocalEvent<MeleeWeaponComponent, GetVerbsEvent<ExamineVerb>>(OnMeleeExaminableVerb);
+        SubscribeLocalEvent<MeleeSpeechComponent, MeleeHitEvent>(OnSpeechHit);
+        SubscribeLocalEvent<MeleeWeaponComponent, DamageExamineEvent>(OnMeleeExamineDamage);
     }
 
-    private void OnMeleeExaminableVerb(EntityUid uid, MeleeWeaponComponent component, GetVerbsEvent<ExamineVerb> args)
+    private void OnMeleeExamineDamage(EntityUid uid, MeleeWeaponComponent component, ref DamageExamineEvent args)
     {
-        if (!args.CanInteract || !args.CanAccess || component.HideFromExamine)
+        if (component.Hidden)
             return;
 
-        var getDamage = new ItemMeleeDamageEvent(component.Damage);
-        RaiseLocalEvent(uid, getDamage);
+        var damageSpec = GetDamage(uid, args.User, component);
 
-        var damageSpec = GetDamage(component);
-
-        if (damageSpec == null)
-            damageSpec = new DamageSpecifier();
-
-        damageSpec += getDamage.BonusDamage;
-
-        if (damageSpec.Total == FixedPoint2.Zero)
+        if (damageSpec.Empty)
             return;
 
-        var verb = new ExamineVerb()
-        {
-            Act = () =>
-            {
-                var markup = _damageable.GetDamageExamine(damageSpec, Loc.GetString("damage-melee"));
-                _examine.SendExamineTooltip(args.User, uid, markup, false, false);
-            },
-            Text = Loc.GetString("damage-examinable-verb-text"),
-            Message = Loc.GetString("damage-examinable-verb-message"),
-            Category = VerbCategory.Examine,
-            IconTexture = "/Textures/Interface/VerbIcons/smite.svg.192dpi.png"
-        };
-
-        args.Verbs.Add(verb);
+        _damageExamine.AddDamageExamine(args.Message, damageSpec, Loc.GetString("damage-melee"));
     }
 
-    private DamageSpecifier? GetDamage(MeleeWeaponComponent component)
+    protected override bool ArcRaySuccessful(EntityUid targetUid,
+        Vector2 position,
+        Angle angle,
+        Angle arcWidth,
+        float range,
+        MapId mapId,
+        EntityUid ignore,
+        ICommonSession? session)
     {
-        return component.Damage.Total > FixedPoint2.Zero ? component.Damage : null;
-    }
+        // Originally the client didn't predict damage effects so you'd intuit some level of how far
+        // in the future you'd need to predict, but then there was a lot of complaining like "why would you add artifical delay" as if ping is a choice.
+        // Now damage effects are predicted but for wide attacks it differs significantly from client and server so your game could be lying to you on hits.
+        // This isn't fair in the slightest because it makes ping a huge advantage and this would be a hidden system.
+        // Now the client tells us what they hit and we validate if it's plausible.
 
-    protected override void Popup(string message, EntityUid? uid, EntityUid? user)
-    {
-        if (uid == null)
-            return;
+        // Even if the client is sending entities they shouldn't be able to hit:
+        // A) Wide-damage is split anyway
+        // B) We run the same validation we do for click attacks.
 
-        PopupSystem.PopupEntity(message, uid.Value, Filter.Pvs(uid.Value, entityManager: EntityManager).RemoveWhereAttachedEntity(e => e == user));
-    }
+        // Could also check the arc though future effort + if they're aimbotting it's not really going to make a difference.
 
-    protected override void DoLightAttack(EntityUid user, LightAttackEvent ev, MeleeWeaponComponent component)
-    {
-        base.DoLightAttack(user, ev, component);
-
-        // Can't attack yourself
-        // Not in LOS.
-        if (user == ev.Target ||
-            ev.Target == null ||
-            Deleted(ev.Target) ||
-            // For consistency with wide attacks stuff needs damageable.
-            !HasComp<DamageableComponent>(ev.Target) ||
-            !TryComp<TransformComponent>(ev.Target, out var targetXform))
-        {
-            return;
-        }
-
-        // InRangeUnobstructed is insufficient rn as it checks the centre of the body rather than the nearest edge.
-        // TODO: Look at fixing it
-        // This is mainly to keep consistency between the wide attack raycast and the click attack raycast.
-        if (!_interaction.InRangeUnobstructed(user, ev.Target.Value, component.Range + 0.35f))
-            return;
-
-        var damage = component.Damage * GetModifier(component, true);
-
-        // Sawmill.Debug($"Melee damage is {damage.Total} out of {component.Damage.Total}");
-
-        // Raise event before doing damage so we can cancel damage if the event is handled
-        var hitEvent = new MeleeHitEvent(new List<EntityUid> { ev.Target.Value }, user, damage);
-        RaiseLocalEvent(component.Owner, hitEvent);
-
-        if (hitEvent.Handled)
-            return;
-
-        var itemDamage = new ItemMeleeDamageEvent(damage);
-        RaiseLocalEvent(component.Owner, itemDamage);
-        var modifiers = itemDamage.ModifiersList;
-        modifiers.AddRange(hitEvent.ModifiersList);
-
-        var targets = new List<EntityUid>(1)
-        {
-            ev.Target.Value
-        };
-
-        // For stuff that cares about it being attacked.
-        RaiseLocalEvent(ev.Target.Value, new AttackedEvent(component.Owner, user, targetXform.Coordinates));
-
-        var modifiedDamage = DamageSpecifier.ApplyModifierSets(damage + hitEvent.BonusDamage + itemDamage.BonusDamage, hitEvent.ModifiersList);
-        var damageResult = _damageable.TryChangeDamage(ev.Target, modifiedDamage);
-
-        if (damageResult != null && damageResult.Total > FixedPoint2.Zero)
-        {
-            // If the target has stamina and is taking blunt damage, they should also take stamina damage based on their blunt to stamina factor
-            if (damageResult.DamageDict.TryGetValue("Blunt", out var bluntDamage))
-            {
-                _stamina.TakeStaminaDamage(ev.Target.Value, (bluntDamage * component.BluntStaminaDamageFactor).Float());
-            }
-
-            if (component.Owner == user)
-            {
-                _adminLogger.Add(LogType.MeleeHit,
-                    $"{ToPrettyString(user):user} melee attacked {ToPrettyString(ev.Target.Value):target} using their hands and dealt {damageResult.Total:damage} damage");
-            }
-            else
-            {
-                _adminLogger.Add(LogType.MeleeHit,
-                    $"{ToPrettyString(user):user} melee attacked {ToPrettyString(ev.Target.Value):target} using {ToPrettyString(component.Owner):used} and dealt {damageResult.Total:damage} damage");
-            }
-
-            PlayHitSound(ev.Target.Value, GetHighestDamageSound(modifiedDamage, _protoManager), hitEvent.HitSoundOverride, component.HitSound);
-        }
-        else
-        {
-            if (hitEvent.HitSoundOverride != null)
-            {
-                Audio.PlayPvs(hitEvent.HitSoundOverride, component.Owner);
-            }
-            else
-            {
-                Audio.PlayPvs(component.NoDamageSound, component.Owner);
-            }
-        }
-
-        if (damageResult?.Total > FixedPoint2.Zero)
-        {
-            RaiseNetworkEvent(new DamageEffectEvent(Color.Red, targets), Filter.Pvs(targetXform.Coordinates, entityMan: EntityManager));
-        }
-    }
-
-    protected override void DoHeavyAttack(EntityUid user, HeavyAttackEvent ev, MeleeWeaponComponent component)
-    {
-        base.DoHeavyAttack(user, ev, component);
-
-        // TODO: This is copy-paste as fuck with DoPreciseAttack
-        if (!TryComp<TransformComponent>(user, out var userXform))
-        {
-            return;
-        }
-
-        var targetMap = ev.Coordinates.ToMap(EntityManager);
-
-        if (targetMap.MapId != userXform.MapID)
-        {
-            return;
-        }
-
-        var userPos = userXform.WorldPosition;
-        var direction = targetMap.Position - userPos;
-        var distance = Math.Min(component.Range, direction.Length);
-
-        // This should really be improved. GetEntitiesInArc uses pos instead of bounding boxes.
-        var entities = ArcRayCast(userPos, direction.ToWorldAngle(), component.Angle, distance, userXform.MapID, user);
-
-        if (entities.Count == 0)
-            return;
-
-        var targets = new List<EntityUid>();
-        var damageQuery = GetEntityQuery<DamageableComponent>();
-
-        foreach (var entity in entities)
-        {
-            if (entity == user ||
-                !damageQuery.HasComponent(entity))
-                continue;
-
-            targets.Add(entity);
-        }
-
-        var damage = component.Damage * GetModifier(component, false);
-        // Sawmill.Debug($"Melee damage is {damage.Total} out of {component.Damage.Total}");
-
-        // Raise event before doing damage so we can cancel damage if the event is handled
-        var hitEvent = new MeleeHitEvent(targets, user, damage);
-        RaiseLocalEvent(component.Owner, hitEvent);
-
-        if (hitEvent.Handled)
-            return;
-
-        var itemDamage = new ItemMeleeDamageEvent(damage);
-        RaiseLocalEvent(component.Owner, itemDamage);
-        var modifiers = itemDamage.ModifiersList;
-        modifiers.AddRange(hitEvent.ModifiersList);
-
-        // For stuff that cares about it being attacked.
-        foreach (var target in targets)
-        {
-            RaiseLocalEvent(target, new AttackedEvent(component.Owner, user, Transform(target).Coordinates));
-        }
-
-        var modifiedDamage = DamageSpecifier.ApplyModifierSets(damage + hitEvent.BonusDamage + itemDamage.BonusDamage, hitEvent.ModifiersList);
-        var appliedDamage = new DamageSpecifier();
-
-        foreach (var entity in targets)
-        {
-            RaiseLocalEvent(entity, new AttackedEvent(component.Owner, user, ev.Coordinates));
-
-            var damageResult = _damageable.TryChangeDamage(entity, modifiedDamage);
-
-            if (damageResult != null && damageResult.Total > FixedPoint2.Zero)
-            {
-                appliedDamage += damageResult;
-
-                if (component.Owner == user)
-                {
-                    _adminLogger.Add(LogType.MeleeHit,
-                        $"{ToPrettyString(user):user} melee attacked {ToPrettyString(entity):target} using their hands and dealt {damageResult.Total:damage} damage");
-                }
-                else
-                {
-                    _adminLogger.Add(LogType.MeleeHit,
-                        $"{ToPrettyString(user):user} melee attacked {ToPrettyString(entity):target} using {ToPrettyString(component.Owner):used} and dealt {damageResult.Total:damage} damage");
-                }
-            }
-        }
-
-        if (entities.Count != 0)
-        {
-            if (appliedDamage.Total > FixedPoint2.Zero)
-            {
-                var target = entities.First();
-                PlayHitSound(target, GetHighestDamageSound(modifiedDamage, _protoManager), hitEvent.HitSoundOverride, component.HitSound);
-            }
-            else
-            {
-                if (hitEvent.HitSoundOverride != null)
-                {
-                    Audio.PlayPvs(hitEvent.HitSoundOverride, component.Owner);
-                }
-                else
-                {
-                    Audio.PlayPvs(component.NoDamageSound, component.Owner);
-                }
-            }
-        }
-
-        if (appliedDamage.Total > FixedPoint2.Zero)
-        {
-            RaiseNetworkEvent(new DamageEffectEvent(Color.Red, targets), Filter.Pvs(Transform(targets[0]).Coordinates, entityMan: EntityManager));
-        }
-    }
-
-    protected override bool DoDisarm(EntityUid user, DisarmAttackEvent ev, MeleeWeaponComponent component)
-    {
-        if (!base.DoDisarm(user, ev, component))
+        // (This runs lagcomp internally and is what clickattacks use)
+        if (!Interaction.InRangeUnobstructed(ignore, targetUid, range + 0.1f))
             return false;
 
-        if (!TryComp<CombatModeComponent>(user, out var combatMode))
+        // TODO: Check arc though due to the aforementioned aimbot + damage split comments it's less important.
+        return true;
+    }
+
+    protected override bool DoDisarm(EntityUid user, DisarmAttackEvent ev, EntityUid meleeUid, MeleeWeaponComponent component, ICommonSession? session)
+    {
+        if (!base.DoDisarm(user, ev, meleeUid, component, session))
             return false;
 
-        var target = ev.Target!.Value;
-
-        if (!TryComp<HandsComponent>(ev.Target.Value, out var targetHandsComponent))
+        if (!TryComp<CombatModeComponent>(user, out var combatMode) ||
+            combatMode.CanDisarm != true)
         {
-            // Client will have already predicted this.
             return false;
         }
 
-        if (!_interaction.InRangeUnobstructed(user, ev.Target.Value, component.Range + 0.1f))
+        var target = GetEntity(ev.Target!.Value);
+
+        if (_mobState.IsIncapacitated(target))
+        {
+            return false;
+        }
+
+        if (!TryComp<HandsComponent>(target, out var targetHandsComponent))
+        {
+            if (!TryComp<StatusEffectsComponent>(target, out var status) || !status.AllowedEffects.Contains("KnockedDown"))
+                return false;
+        }
+
+        if (!InRange(user, target, component.Range, session))
         {
             return false;
         }
 
         EntityUid? inTargetHand = null;
 
-        if (targetHandsComponent.ActiveHand is { IsEmpty: false })
+        if (targetHandsComponent?.ActiveHand is { IsEmpty: false })
         {
             inTargetHand = targetHandsComponent.ActiveHand.HeldEntity!.Value;
         }
+
+        Interaction.DoContactInteraction(user, target);
 
         var attemptEvent = new DisarmAttemptEvent(target, user, inTargetHand);
 
@@ -350,34 +139,73 @@ public sealed class MeleeWeaponSystem : SharedMeleeWeaponSystem
 
         if (_random.Prob(chance))
         {
+            // Yknow something tells me this comment is hilariously out of date...
             // Don't play a sound as the swing is already predicted.
             // Also don't play popups because most disarms will miss.
             return false;
         }
 
-        var filterOther = Filter.Pvs(user, entityManager: EntityManager).RemoveWhereAttachedEntity(e => e == user);
-
-        var msgOther = Loc.GetString(
-                "disarm-action-popup-message-other-clients",
-                ("performerName", Identity.Entity(user, EntityManager)),
-                ("targetName", Identity.Entity(target, EntityManager)));
-
-        var msgUser = Loc.GetString("disarm-action-popup-message-cursor", ("targetName", Identity.Entity(target, EntityManager)));
-
-        PopupSystem.PopupEntity(msgOther, user, filterOther);
-        PopupSystem.PopupEntity(msgUser, target, Filter.Entities(user));
-
-        Audio.PlayPvs(combatMode.DisarmSuccessSound, user, AudioParams.Default.WithVariation(0.025f).WithVolume(5f));
-        _adminLogger.Add(LogType.DisarmedAction, $"{ToPrettyString(user):user} used disarm on {ToPrettyString(target):target}");
+        AdminLogger.Add(LogType.DisarmedAction, $"{ToPrettyString(user):user} used disarm on {ToPrettyString(target):target}");
 
         var eventArgs = new DisarmedEvent { Target = target, Source = user, PushProbability = 1 - chance };
         RaiseLocalEvent(target, eventArgs);
 
-        RaiseNetworkEvent(new DamageEffectEvent(Color.Aqua, new List<EntityUid>() {target}));
+        if (!eventArgs.Handled)
+        {
+            return false;
+        }
+
+        _audio.PlayPvs(combatMode.DisarmSuccessSound, user, AudioParams.Default.WithVariation(0.025f).WithVolume(5f));
+        AdminLogger.Add(LogType.DisarmedAction, $"{ToPrettyString(user):user} used disarm on {ToPrettyString(target):target}");
+
+        var targetEnt = Identity.Entity(target, EntityManager);
+        var userEnt = Identity.Entity(user, EntityManager);
+
+        var msgOther = Loc.GetString(
+                eventArgs.PopupPrefix + "popup-message-other-clients",
+                ("performerName", userEnt),
+                ("targetName", targetEnt));
+
+        var msgUser = Loc.GetString(eventArgs.PopupPrefix + "popup-message-cursor", ("targetName", targetEnt));
+
+        var filterOther = Filter.PvsExcept(user, entityManager: EntityManager);
+
+        PopupSystem.PopupEntity(msgOther, user, filterOther, true);
+        PopupSystem.PopupEntity(msgUser, target, user);
+
+        if (eventArgs.IsStunned)
+        {
+
+            PopupSystem.PopupEntity(Loc.GetString("stunned-component-disarm-success-others", ("source", userEnt), ("target", targetEnt)), targetEnt, Filter.PvsExcept(user), true, PopupType.LargeCaution);
+            PopupSystem.PopupCursor(Loc.GetString("stunned-component-disarm-success", ("target", targetEnt)), user, PopupType.Large);
+
+            AdminLogger.Add(LogType.DisarmedKnockdown, LogImpact.Medium, $"{ToPrettyString(user):user} knocked down {ToPrettyString(target):target}");
+        }
+
         return true;
     }
 
-    private float CalculateDisarmChance(EntityUid disarmer, EntityUid disarmed, EntityUid? inTargetHand, SharedCombatModeComponent disarmerComp)
+    protected override bool InRange(EntityUid user, EntityUid target, float range, ICommonSession? session)
+    {
+        EntityCoordinates targetCoordinates;
+        Angle targetLocalAngle;
+
+        if (session is { } pSession)
+        {
+            (targetCoordinates, targetLocalAngle) = _lag.GetCoordinatesAngle(target, pSession);
+            return Interaction.InRangeUnobstructed(user, target, targetCoordinates, targetLocalAngle, range);
+        }
+
+        return Interaction.InRangeUnobstructed(user, target, range);
+    }
+
+    protected override void DoDamageEffect(List<EntityUid> targets, EntityUid? user, TransformComponent targetXform)
+    {
+        var filter = Filter.Pvs(targetXform.Coordinates, entityMan: EntityManager).RemoveWhereAttachedEntity(o => o == user);
+        _color.RaiseEffect(Color.Red, targets, filter);
+    }
+
+    private float CalculateDisarmChance(EntityUid disarmer, EntityUid disarmed, EntityUid? inTargetHand, CombatModeComponent disarmerComp)
     {
         if (HasComp<DisarmProneComponent>(disarmer))
             return 1.0f;
@@ -385,9 +213,7 @@ public sealed class MeleeWeaponSystem : SharedMeleeWeaponSystem
         if (HasComp<DisarmProneComponent>(disarmed))
             return 0.0f;
 
-        var contestResults = 1 - _contests.OverallStrengthContest(disarmer, disarmed);
-
-        float chance = (disarmerComp.BaseDisarmFailChance + contestResults);
+        var chance = disarmerComp.BaseDisarmFailChance;
 
         if (inTargetHand != null && TryComp<DisarmMalusComponent>(inTargetHand, out var malus))
         {
@@ -397,151 +223,34 @@ public sealed class MeleeWeaponSystem : SharedMeleeWeaponSystem
         return Math.Clamp(chance, 0f, 1f);
     }
 
-    private HashSet<EntityUid> ArcRayCast(Vector2 position, Angle angle, Angle arcWidth, float range, MapId mapId, EntityUid ignore)
+    public override void DoLunge(EntityUid user, EntityUid weapon, Angle angle, Vector2 localPos, string? animation, bool predicted = true)
     {
-        // TODO: This is pretty sucky.
-        var widthRad = arcWidth;
-        var increments = 1 + 35 * (int) Math.Ceiling(widthRad / (2 * Math.PI));
-        var increment = widthRad / increments;
-        var baseAngle = angle - widthRad / 2;
+        Filter filter;
 
-        var resSet = new HashSet<EntityUid>();
-
-        for (var i = 0; i < increments; i++)
+        if (predicted)
         {
-            var castAngle = new Angle(baseAngle + increment * i);
-            var res = _physics.IntersectRay(mapId,
-                new CollisionRay(position, castAngle.ToWorldVec(),
-                    AttackMask), range, ignore, false).ToList();
-
-            if (res.Count != 0)
-            {
-                resSet.Add(res[0].HitEntity);
-            }
+            filter = Filter.PvsExcept(user, entityManager: EntityManager);
+        }
+        else
+        {
+            filter = Filter.Pvs(user, entityManager: EntityManager);
         }
 
-        return resSet;
+        RaiseNetworkEvent(new MeleeLungeEvent(GetNetEntity(user), GetNetEntity(weapon), angle, localPos, animation), filter);
     }
 
-    public override void DoLunge(EntityUid user, Angle angle, Vector2 localPos, string? animation)
+    private void OnSpeechHit(EntityUid owner, MeleeSpeechComponent comp, MeleeHitEvent args)
     {
-        RaiseNetworkEvent(new MeleeLungeEvent(user, angle, localPos, animation), Filter.Pvs(user, entityManager: EntityManager).RemoveWhereAttachedEntity(e => e == user));
-    }
-
-    private void PlayHitSound(EntityUid target, string? type, SoundSpecifier? hitSoundOverride, SoundSpecifier? hitSound)
-    {
-        var playedSound = false;
-
-        // Play sound based off of highest damage type.
-        if (TryComp<MeleeSoundComponent>(target, out var damageSoundComp))
+        if (!args.IsHit ||
+        !args.HitEntities.Any())
         {
-            if (type == null && damageSoundComp.NoDamageSound != null)
-            {
-                Audio.PlayPvs(damageSoundComp.NoDamageSound, target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                playedSound = true;
-            }
-            else if (type != null && damageSoundComp.SoundTypes?.TryGetValue(type, out var damageSoundType) == true)
-            {
-                Audio.PlayPvs(damageSoundType, target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                playedSound = true;
-            }
-            else if (type != null && damageSoundComp.SoundGroups?.TryGetValue(type, out var damageSoundGroup) == true)
-            {
-                Audio.PlayPvs(damageSoundGroup, target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                playedSound = true;
-            }
-        }
-
-        // Use weapon sounds if the thing being hit doesn't specify its own sounds.
-        if (!playedSound)
-        {
-            if (hitSoundOverride != null)
-            {
-                Audio.PlayPvs(hitSoundOverride, target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                playedSound = true;
-            }
-            else if (hitSound != null)
-            {
-                Audio.PlayPvs(hitSound, target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                playedSound = true;
-            }
-        }
-
-        // Fallback to generic sounds.
-        if (!playedSound)
-        {
-            switch (type)
-            {
-                // Unfortunately heat returns caustic group so can't just use the damagegroup in that instance.
-                case "Burn":
-                case "Heat":
-                case "Cold":
-                    Audio.PlayPvs(new SoundPathSpecifier("/Audio/Items/welder.ogg"), target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                    break;
-                // No damage, fallback to tappies
-                case null:
-                    Audio.PlayPvs(new SoundPathSpecifier("/Audio/Weapons/tap.ogg"), target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                    break;
-                case "Brute":
-                    Audio.PlayPvs(new SoundPathSpecifier("/Audio/Weapons/smash.ogg"), target, AudioParams.Default.WithVariation(DamagePitchVariation));
-                    break;
-            }
-        }
-    }
-
-    public static string? GetHighestDamageSound(DamageSpecifier modifiedDamage, IPrototypeManager protoManager)
-    {
-        var groups = modifiedDamage.GetDamagePerGroup(protoManager);
-
-        // Use group if it's exclusive, otherwise fall back to type.
-        if (groups.Count == 1)
-        {
-            return groups.Keys.First();
-        }
-
-        var highestDamage = FixedPoint2.Zero;
-        string? highestDamageType = null;
-
-        foreach (var (type, damage) in modifiedDamage.DamageDict)
-        {
-            if (damage <= highestDamage)
-                continue;
-
-            highestDamageType = type;
-        }
-
-        return highestDamageType;
-    }
-
-    private void OnChemicalInjectorHit(EntityUid owner, MeleeChemicalInjectorComponent comp, MeleeHitEvent args)
-    {
-        if (!_solutions.TryGetInjectableSolution(owner, out var solutionContainer))
             return;
-
-        var hitBloodstreams = new List<BloodstreamComponent>();
-        var bloodQuery = GetEntityQuery<BloodstreamComponent>();
-
-        foreach (var entity in args.HitEntities)
-        {
-            if (Deleted(entity))
-                continue;
-
-            if (bloodQuery.TryGetComponent(entity, out var bloodstream))
-                hitBloodstreams.Add(bloodstream);
         }
 
-        if (!hitBloodstreams.Any())
-            return;
-
-        var removedSolution = solutionContainer.SplitSolution(comp.TransferAmount * hitBloodstreams.Count);
-        var removedVol = removedSolution.TotalVolume;
-        var solutionToInject = removedSolution.SplitSolution(removedVol * comp.TransferEfficiency);
-        var volPerBloodstream = solutionToInject.TotalVolume * (1 / hitBloodstreams.Count);
-
-        foreach (var bloodstream in hitBloodstreams)
+        if (comp.Battlecry != null)//If the battlecry is set to empty, doesn't speak
         {
-            var individualInjection = solutionToInject.SplitSolution(volPerBloodstream);
-            _bloodstream.TryAddToChemicals((bloodstream).Owner, individualInjection, bloodstream);
+            _chat.TrySendInGameICMessage(args.User, comp.Battlecry, InGameICChatType.Speak, true, true, checkRadioPrefix: false);  //Speech that isn't sent to chat or adminlogs
         }
+
     }
 }

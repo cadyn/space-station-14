@@ -14,6 +14,10 @@
         ents: []
   - type: StaticPrice
     price: 20
+  - type: Gibbable
+  - type: Tag
+    tags:
+      - Trash
 
 - type: entity
   id: TorsoSkeleton
@@ -21,7 +25,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "torso_m"
     - type: Icon
@@ -29,10 +32,6 @@
       state: "torso_m"
     - type: BodyPart
       partType: Torso
-      size: 14
-      compatibility: Biological
-#    criticalThreshold: 100
-#    deadThreshold: 150
 
 - type: entity
   id: HeadSkeleton
@@ -41,7 +40,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "skull_icon"
     - type: Icon
@@ -49,29 +47,30 @@
       state: "skull_icon"
     - type: BodyPart
       partType: Head
-      size: 7
-      compatibility: Biological
     - type: Input
       context: "human"
     - type: Speech
+      speechVerb: Skeleton
+    - type: SkeletonAccent
+    - type: Actions
     - type: Vocal
+      sounds:
+        Male: Skeleton
+        Female: Skeleton
+        Unsexed: Skeleton
     - type: Emoting
     - type: Grammar
       attributes:
         proper: true
     - type: Examiner
-    - type: IntrinsicRadio
-      channels:
-      - Common
     - type: DoAfter
-    - type: Actions
     - type: MobState
-      thresholds:
-        0: Alive
-    #    criticalThreshold: 50
-    #    deadThreshold: 120
-
-
+      allowedStates:
+        - Alive
+    - type: Tag
+      tags:
+        - MindTransferTarget
+        - Head
 
 - type: entity
   id: LeftArmSkeleton
@@ -79,7 +78,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "l_arm"
     - type: Icon
@@ -87,11 +85,7 @@
       state: "l_arm"
     - type: BodyPart
       partType: Arm
-      size: 5
-      compatibility: Biological
       symmetry: Left
-    #    criticalThreshold: 40
-    #    deadThreshold: 80
 
 - type: entity
   id: RightArmSkeleton
@@ -99,7 +93,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "r_arm"
     - type: Icon
@@ -107,11 +100,7 @@
       state: "r_arm"
     - type: BodyPart
       partType: Arm
-      size: 5
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 40
-    #    deadThreshold: 80
 
 - type: entity
   id: LeftHandSkeleton
@@ -119,7 +108,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "l_hand"
     - type: Icon
@@ -127,11 +115,7 @@
       state: "l_hand"
     - type: BodyPart
       partType: Hand
-      size: 3
-      compatibility: Biological
       symmetry: Left
-    #    criticalThreshold: 30
-    #    deadThreshold: 60
 
 - type: entity
   id: RightHandSkeleton
@@ -139,7 +123,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "r_hand"
     - type: Icon
@@ -147,11 +130,7 @@
       state: "r_hand"
     - type: BodyPart
       partType: Hand
-      size: 3
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 30
-    #    deadThreshold: 60
 
 - type: entity
   id: LeftLegSkeleton
@@ -159,7 +138,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "l_leg"
     - type: Icon
@@ -167,9 +145,8 @@
       state: "l_leg"
     - type: BodyPart
       partType: Leg
-      size: 6
-      compatibility: Biological
       symmetry: Left
+    - type: MovementBodyPart
 
 - type: entity
   id: RightLegSkeleton
@@ -177,7 +154,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "r_leg"
     - type: Icon
@@ -185,11 +161,8 @@
       state: "r_leg"
     - type: BodyPart
       partType: Leg
-      size: 6
-      compatibility: Biological
       symmetry: Right
-    #    criticalThreshold: 45
-    #    deadThreshold: 90
+    - type: MovementBodyPart
 
 - type: entity
   id: LeftFootSkeleton
@@ -197,7 +170,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "l_foot"
     - type: Icon
@@ -205,11 +177,7 @@
       state: "l_foot"
     - type: BodyPart
       partType: Foot
-      size: 2
-      compatibility: Biological
       symmetry: Left
-#    criticalThreshold: 30
-#    deadThreshold: 60
 
 - type: entity
   id: RightFootSkeleton
@@ -217,7 +185,6 @@
   parent: PartSkeleton
   components:
     - type: Sprite
-      netsync: false
       sprite: Mobs/Species/Skeleton/parts.rsi
       state: "r_foot"
     - type: Icon
@@ -225,8 +192,4 @@
       state: "r_foot"
     - type: BodyPart
       partType: Foot
-      size: 2
-      compatibility: Biological
       symmetry: Right
-#    criticalThreshold: 30
-#    deadThreshold: 60

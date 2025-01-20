@@ -1,65 +1,100 @@
 #debug
 - type: storeCategory
   id: Debug
-  name: debug category
+  name: store-category-debug
 
 - type: storeCategory
   id: Debug2
-  name: debug category 2
+  name: store-category-debug2
+
+#WIZARD
+- type: storeCategory
+  id: SpellbookOffensive
+  name: store-caregory-spellbook-offensive
+  priority: 0
+
+- type: storeCategory
+  id: SpellbookDefensive
+  name: store-caregory-spellbook-defensive
+  priority: 1
+
+- type: storeCategory
+  id: SpellbookUtility
+  name: store-caregory-spellbook-utility
+  priority: 2
+
+- type: storeCategory
+  id: SpellbookEquipment
+  name: store-caregory-spellbook-equipment
+  priority: 3
+
+- type: storeCategory
+  id: SpellbookEvents
+  name: store-caregory-spellbook-events
+  priority: 4
 
 #uplink categoires
 - type: storeCategory
-  id: UplinkWeapons
-  name: Weapons
+  id: UplinkWeaponry
+  name: store-category-weapons
   priority: 0
 
 - type: storeCategory
   id: UplinkAmmo
-  name: Ammo
+  name: store-category-ammo
   priority: 1
 
 - type: storeCategory
   id: UplinkExplosives
-  name: Explosives
+  name: store-category-explosives
   priority: 2
 
 - type: storeCategory
-  id: UplinkMisc
-  name: Misc
+  id: UplinkWearables
+  name: store-category-wearables
   priority: 3
 
 - type: storeCategory
-  id: UplinkBundles
-  name: Bundles
+  id: UplinkChemicals
+  name: store-category-chemicals
   priority: 4
 
 - type: storeCategory
-  id: UplinkTools
-  name: Tools
+  id: UplinkDeception
+  name: store-category-deception
   priority: 5
 
 - type: storeCategory
-  id: UplinkUtility
-  name: Utility
+  id: UplinkDisruption
+  name: store-category-disruption
   priority: 6
 
 - type: storeCategory
-  id: UplinkJob
-  name: Job
+  id: UplinkImplants
+  name: store-category-implants
   priority: 7
 
 - type: storeCategory
-  id: UplinkArmor
-  name: Armor
+  id: UplinkAllies
+  name: store-category-allies
   priority: 8
 
 - type: storeCategory
-  id: UplinkPointless
-  name: Pointless
+  id: UplinkJob
+  name: store-category-job
   priority: 9
+
+- type: storeCategory
+  id: UplinkPointless
+  name: store-category-pointless
+  priority: 10
 
 #revenant
 - type: storeCategory
   id: RevenantAbilities
-  name: Abilities
+  name: store-category-abilities
 
+- type: storeCategory
+  id: DiscountedItems
+  name: store-discounted-items
+  priority: 200

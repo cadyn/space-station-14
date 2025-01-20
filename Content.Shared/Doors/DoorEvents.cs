@@ -16,11 +16,25 @@ namespace Content.Shared.Doors
     }
 
     /// <summary>
+    /// Raised when the door's bolt status was changed.
+    /// </summary>
+    public sealed class DoorBoltsChangedEvent : EntityEventArgs
+    {
+        public readonly bool BoltsDown;
+
+        public DoorBoltsChangedEvent(bool boltsDown)
+        {
+            BoltsDown = boltsDown;
+        }
+    }
+
+    /// <summary>
     /// Raised when the door is determining whether it is able to open.
     /// Cancel to stop the door from being opened.
     /// </summary>
     public sealed class BeforeDoorOpenedEvent : CancellableEntityEventArgs
     {
+        public EntityUid? User = null;
     }
 
     /// <summary>
@@ -60,30 +74,5 @@ namespace Content.Shared.Doors
     /// </remarks>
     public sealed class BeforeDoorAutoCloseEvent : CancellableEntityEventArgs
     {
-    }
-
-    /// <summary>
-    /// Raised to determine how long the door's pry time should be modified by.
-    /// Multiply PryTimeModifier by the desired amount.
-    /// </summary>
-    public sealed class DoorGetPryTimeModifierEvent : EntityEventArgs
-    {
-        public float PryTimeModifier = 1.0f;
-    }
-
-    /// <summary>
-    /// Raised when an attempt to pry open the door is made.
-    /// Cancel to stop the door from being pried open.
-    /// </summary>
-    public sealed class BeforeDoorPryEvent : CancellableEntityEventArgs
-    {
-        public readonly EntityUid User;
-        public readonly EntityUid Tool;
-
-        public BeforeDoorPryEvent(EntityUid user, EntityUid tool)
-        {
-            User = user;
-            Tool = tool;
-        }
     }
 }

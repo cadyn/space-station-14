@@ -15,7 +15,7 @@ public interface IAdminLogManager : ISharedAdminLogManager
     void RoundStarting(int id);
     void RunLevelChanged(GameRunLevel level);
 
-    Task<List<SharedAdminLog>> All(LogFilter? filter = null);
+    Task<List<SharedAdminLog>> All(LogFilter? filter = null, Func<List<SharedAdminLog>>? listProvider = null);
     IAsyncEnumerable<string> AllMessages(LogFilter? filter = null);
     IAsyncEnumerable<JsonDocument> AllJson(LogFilter? filter = null);
     Task<Round> Round(int roundId);
@@ -23,4 +23,5 @@ public interface IAdminLogManager : ISharedAdminLogManager
     IAsyncEnumerable<string> CurrentRoundMessages(LogFilter? filter = null);
     IAsyncEnumerable<JsonDocument> CurrentRoundJson(LogFilter? filter = null);
     Task<Round> CurrentRound();
+    Task<int> CountLogs(int round);
 }

@@ -10,7 +10,7 @@ namespace Content.Server.Power.Components
     ///     and battery storage should be handed off to components like <see cref="BatteryComponent"/>.
     /// </remarks>
     [RegisterComponent]
-    public sealed class PowerNetworkBatteryComponent : Component
+    public sealed partial class PowerNetworkBatteryComponent : Component
     {
         [ViewVariables] public float LastSupply = 0f;
 
@@ -94,7 +94,7 @@ namespace Content.Server.Power.Components
             set => NetworkBattery.CanCharge = value;
         }
 
-        [DataField("canDisharge")]
+        [DataField("canDischarge")]
         [ViewVariables(VVAccess.ReadWrite)]
         public bool CanDischarge
         {

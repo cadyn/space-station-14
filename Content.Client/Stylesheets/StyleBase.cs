@@ -1,4 +1,6 @@
+using System.Numerics;
 using Content.Client.Resources;
+using Content.Client.UserInterface.Controls;
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
 using Robust.Client.UserInterface;
@@ -38,6 +40,7 @@ namespace Content.Client.Stylesheets
         protected StyleBoxTexture BaseButtonSquare { get; }
 
         protected StyleBoxTexture BaseAngleRect { get; }
+        protected StyleBoxTexture AngleBorderRect { get; }
 
         protected StyleBase(IResourceCache resCache)
         {
@@ -76,7 +79,7 @@ namespace Content.Client.Stylesheets
 
             BaseButtonOpenRight = new StyleBoxTexture(BaseButton)
             {
-                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions((0, 0), (14, 24))),
+                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions(new Vector2(0, 0), new Vector2(14, 24))),
             };
             BaseButtonOpenRight.SetPatchMargin(StyleBox.Margin.Right, 0);
             BaseButtonOpenRight.SetContentMarginOverride(StyleBox.Margin.Right, 8);
@@ -84,7 +87,7 @@ namespace Content.Client.Stylesheets
 
             BaseButtonOpenLeft = new StyleBoxTexture(BaseButton)
             {
-                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions((10, 0), (14, 24))),
+                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions(new Vector2(10, 0), new Vector2(14, 24))),
             };
             BaseButtonOpenLeft.SetPatchMargin(StyleBox.Margin.Left, 0);
             BaseButtonOpenLeft.SetContentMarginOverride(StyleBox.Margin.Left, 8);
@@ -92,7 +95,7 @@ namespace Content.Client.Stylesheets
 
             BaseButtonOpenBoth = new StyleBoxTexture(BaseButton)
             {
-                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions((10, 0), (3, 24))),
+                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions(new Vector2(10, 0), new Vector2(3, 24))),
             };
             BaseButtonOpenBoth.SetPatchMargin(StyleBox.Margin.Horizontal, 0);
             BaseButtonOpenBoth.SetContentMarginOverride(StyleBox.Margin.Horizontal, 8);
@@ -101,7 +104,7 @@ namespace Content.Client.Stylesheets
 
             BaseButtonSquare = new StyleBoxTexture(BaseButton)
             {
-                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions((10, 0), (3, 24))),
+                Texture = new AtlasTexture(buttonTex, UIBox2.FromDimensions(new Vector2(10, 0), new Vector2(3, 24))),
             };
             BaseButtonSquare.SetPatchMargin(StyleBox.Margin.Horizontal, 0);
             BaseButtonSquare.SetContentMarginOverride(StyleBox.Margin.Horizontal, 8);
@@ -113,6 +116,12 @@ namespace Content.Client.Stylesheets
                 Texture = buttonTex,
             };
             BaseAngleRect.SetPatchMargin(StyleBox.Margin.All, 10);
+
+            AngleBorderRect = new StyleBoxTexture
+            {
+                Texture = resCache.GetTexture("/Textures/Interface/Nano/geometric_panel_border.svg.96dpi.png"),
+            };
+            AngleBorderRect.SetPatchMargin(StyleBox.Margin.All, 10);
 
             var vScrollBarGrabberNormal = new StyleBoxFlat
             {

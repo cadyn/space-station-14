@@ -2,11 +2,14 @@
   name: space tick
   id: MobTick
   parent: SimpleSpaceMobBase
-  description: It's a space tick, watch out for its nasty bite. CentCom reports that 90 percent of cargo leg amputations are due to space tick bites.
+  description: It's a space tick, watch out for its nasty bite. CentComm reports that 90 percent of cargo leg amputations are due to space tick bites.
   components:
   - type: InputMover
   - type: MobMover
-  - type: Faction
+  - type: HTN
+    rootTask:
+      task: SimpleHostileCompound
+  - type: NpcFactionMember
     factions:
     - SimpleHostile
   - type: Sprite
@@ -22,20 +25,26 @@
     baseSprintSpeed : 6
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeCircle
-        radius: 0.20
-      density: 20
-      mask:
-      - SmallMobMask
-      layer:
-      - SmallMobLayer
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.20
+        density: 20
+        mask:
+        - SmallMobMask
+        layer:
+        - SmallMobLayer
   - type: MobState
+    allowedStates:
+      - Alive
+      - Dead
+  - type: MobThresholds
     thresholds:
       0: Alive
       15: Dead
+  - type: Stamina
+    critThreshold: 15
   - type: MovementAlwaysTouching
-  - type: Appearance
   - type: DamageStateVisuals
     states:
       Alive:
@@ -49,48 +58,32 @@
   - type: Bloodstream
     bloodMaxVolume: 50
   - type: CombatMode
-    disarmAction:
-      enabled: false
-      autoPopulate: false
-      name: action-name-disarm
   - type: MeleeWeapon
-    hidden: true
-    range: 0.5
+    soundHit:
+        path: /Audio/Effects/bite.ogg
     angle: 0
     animation: WeaponArcBite
     damage:
       groups:
         Brute: 2
-  - type: MeleeChemicalInjector
   - type: SolutionContainerManager
     solutions:
       melee:
         reagents:
         - ReagentId: Toxin
           Quantity: 5
-  - type: RefillableSolution
+  - type: MeleeChemicalInjector
     solution: melee
-  - type: InjectableSolution
-    solution: melee
-  - type: SolutionTransfer
-    maxTransferAmount: 5
-  - type: GhostTakeoverAvailable
-    prob: 0.33
-    makeSentient: true
-    name: space tick
-    description: |
-      Wreak havoc on the station!
   - type: ReplacementAccent
     accent: genericAggressive
+  - type: Speech
+    speechVerb: SmallMob
+  - type: NonSpreaderZombie
 
 - type: entity
   id: MobTickSalvage
   parent: MobTick
   suffix: "Salvage Ruleset"
   components:
-  - type: GhostTakeoverAvailable
-    name: space tick on salvage wreck
-    description: |
-      Defend the loot inside the salvage wreck!
   - type: SalvageMobRestrictions
 

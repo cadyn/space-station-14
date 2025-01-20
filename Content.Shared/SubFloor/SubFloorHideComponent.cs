@@ -13,7 +13,7 @@ namespace Content.Shared.SubFloor
     [NetworkedComponent]
     [RegisterComponent]
     [Access(typeof(SharedSubFloorHideSystem))]
-    public sealed class SubFloorHideComponent : Component
+    public sealed partial class SubFloorHideComponent : Component
     {
         /// <summary>
         ///     Whether the entity's current position has a "Floor-type" tile above its current position.
@@ -40,12 +40,6 @@ namespace Content.Shared.SubFloor
         public bool BlockAmbience { get; set; } = true;
 
         /// <summary>
-        ///     When revealed using some scanning tool, what transparency should be used to draw this item?
-        /// </summary>
-        [DataField("scannerTransparency")]
-        public float ScannerTransparency = 0.8f;
-
-        /// <summary>
         ///     Sprite layer keys for the layers that are always visible, even if the entity is below a floor tile. E.g.,
         ///     the vent part of a vent is always visible, even though the piping is hidden.
         /// </summary>
@@ -53,10 +47,10 @@ namespace Content.Shared.SubFloor
         public HashSet<Enum> VisibleLayers = new() { SubfloorLayers.FirstLayer };
 
         /// <summary>
-        ///     The entities this subfloor is revealed by.
+        /// This is used for storing the original draw depth of a t-ray revealed entity.
+        /// e.g. when a t-ray revealed cable is drawn above a carpet.
         /// </summary>
-        [ViewVariables]
-        [Access(typeof(SharedSubFloorHideSystem), Other = AccessPermissions.ReadWriteExecute)] // FIXME Friends
-        public HashSet<EntityUid> RevealedBy { get; set; } = new();
+        [DataField]
+        public int? OriginalDrawDepth;
     }
 }

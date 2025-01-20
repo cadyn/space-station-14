@@ -4,10 +4,10 @@ namespace Content.Server.Singularity.Components
     /// Overrides exactly how much energy this object gives to a singularity.
     /// </summary>
     [RegisterComponent]
-    public sealed class SinguloFoodComponent : Component
+    public sealed partial class SinguloFoodComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
         [DataField("energy")]
-        public int Energy { get; set; } = 1;
+        public float Energy { get; set; } = 1f;
     }
 }

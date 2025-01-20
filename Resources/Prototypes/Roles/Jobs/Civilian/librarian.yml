@@ -1,9 +1,10 @@
 - type: job
   id: Librarian
   name: job-name-librarian
+  description: job-description-librarian
   playTimeTracker: JobLibrarian
   startingGear: LibrarianGear
-  icon: "Librarian"
+  icon: "JobIconLibrarian"
   supervisors: job-supervisors-hop
   access:
   - Service
@@ -12,11 +13,11 @@
 - type: startingGear
   id: LibrarianGear
   equipment:
-    jumpsuit: ClothingUniformJumpsuitLibrarian
-    back: ClothingBackpackBriefcaseFilled
     shoes: ClothingShoesBootsLaceup
     id: LibrarianPDA
     ears: ClothingHeadsetService
-    pocket1: d10Dice
-  innerclothingskirt: ClothingUniformJumpskirtColorLightBrown
-
+    pocket1: d20Dice
+    pocket2: HandLabeler # for making named bestsellers
+  storage:
+    back:
+    - BookRandom

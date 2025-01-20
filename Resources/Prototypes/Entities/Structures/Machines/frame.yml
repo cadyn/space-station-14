@@ -8,29 +8,36 @@
   components:
     - type: Transform
       anchored: true
-      noRot: true
     - type: Physics
       bodyType: Static
     - type: Fixtures
       fixtures:
-      - shape:
-          !type:PhysShapeAabb
-          bounds: "-0.25,-0.5,0.25,0.5"
-        density: 190
-        mask:
-        - MachineMask
-        layer:
-        - MachineLayer
+        fix1:
+          shape:
+            !type:PhysShapeAabb
+            bounds: "-0.25,-0.5,0.25,0.5"
+          density: 190
+          mask:
+          - MachineMask
+          layer:
+          - MachineLayer
     - type: Clickable
     - type: InteractionOutline
     - type: Anchorable
     - type: Rotatable
     - type: Pullable
     - type: Construction
+      containers:
+        - machine_board
+        - machine_parts
       graph: Machine
       node: missingWires
+    - type: ContainerContainer
+      containers:
+        machine_board: !type:Container
+        machine_parts: !type:Container
     - type: Damageable
-      damageContainer: Inorganic
+      damageContainer: StructuralInorganic
       damageModifierSet: Metallic
     - type: Destructible
       thresholds:
@@ -38,6 +45,9 @@
           !type:DamageTrigger
           damage: 100
         behaviors:
+        - !type:PlaySoundBehavior
+          sound:
+            collection: MetalBreak
         - !type:ChangeConstructionNodeBehavior
           node: start
         - !type:DoActsBehavior
@@ -45,6 +55,7 @@
     - type: Sprite
       sprite: Structures/Machines/parts.rsi
       state: box_0
+      snapCardinals: true
 
 - type: entity
   id: MachineFrame
@@ -55,19 +66,19 @@
   components:
     - type: Transform
       anchored: true
-      noRot: true
     - type: Physics
       bodyType: Static
     - type: Fixtures
       fixtures:
-      - shape:
-          !type:PhysShapeAabb
-          bounds: "-0.25,-0.5,0.25,0.5"
-        density: 190
-        mask:
-        - MachineMask
-        layer:
-        - MachineLayer
+        fix1:
+          shape:
+            !type:PhysShapeAabb
+            bounds: "-0.25,-0.5,0.25,0.5"
+          density: 190
+          mask:
+          - MachineMask
+          layer:
+          - MachineLayer
     - type: Clickable
     - type: InteractionOutline
     - type: Anchorable
@@ -76,8 +87,12 @@
     - type: Construction
       graph: Machine
       node: machineFrame
+      defaultTarget: machine
+      containers:
+        - machine_board
+        - machine_parts
     - type: Damageable
-      damageContainer: Inorganic
+      damageContainer: StructuralInorganic
       damageModifierSet: Metallic
     - type: Destructible
       thresholds:
@@ -85,19 +100,30 @@
           !type:DamageTrigger
           damage: 100
         behaviors:
+        - !type:PlaySoundBehavior
+          sound:
+            collection: MetalBreak
         - !type:ChangeConstructionNodeBehavior
           node: missingWires
         - !type:DoActsBehavior
           acts: ["Destruction"]
     - type: MachineFrame
+    - type: ContainerContainer
+      containers:
+        machine_board: !type:Container
+        machine_parts: !type:Container
     - type: Sprite
-      netsync: false
       sprite: Structures/Machines/parts.rsi
       state: box_1
+      snapCardinals: true
     - type: Appearance
-      visuals:
-      - type: MachineFrameVisualizer
-
+    - type: ItemMapper
+      mapLayers:
+        box_2:
+          minCount: 1
+          whitelist:
+            components:
+            - MachineBoard
 
 - type: entity
   id: MachineFrameDestroyed
@@ -109,11 +135,13 @@
     - type: Transform
       anchored: true
       noRot: true
+    - type: Physics
+      bodyType: Static
     - type: Construction
       graph: Machine
       node: destroyedMachineFrame
     - type: Damageable
-      damageContainer: Inorganic
+      damageContainer: StructuralInorganic
       damageModifierSet: Metallic
     - type: Destructible
       thresholds:
@@ -129,6 +157,5 @@
         - !type:DoActsBehavior
           acts: ["Destruction"]
     - type: Sprite
-      netsync: false
       sprite: Structures/Machines/parts.rsi
       state: destroyed

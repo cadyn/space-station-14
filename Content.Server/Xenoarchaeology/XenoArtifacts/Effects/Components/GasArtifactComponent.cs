@@ -6,7 +6,7 @@ namespace Content.Server.Xenoarchaeology.XenoArtifacts.Effects.Components;
 ///     Spawn a random gas with random temperature when artifact activated.
 /// </summary>
 [RegisterComponent]
-public sealed class GasArtifactComponent : Component
+public sealed partial class GasArtifactComponent : Component
 {
     /// <summary>
     ///     Gas that will be spawned when artifact activated.
@@ -20,14 +20,14 @@ public sealed class GasArtifactComponent : Component
     ///     List of possible activation gases to pick on startup.
     /// </summary>
     [DataField("possibleGas")]
-    public Gas[] PossibleGases =
+    public List<Gas> PossibleGases = new()
     {
         Gas.Oxygen,
         Gas.Plasma,
         Gas.Nitrogen,
         Gas.CarbonDioxide,
         Gas.Tritium,
-        Gas.Miasma,
+        Gas.Ammonia,
         Gas.NitrousOxide,
         Gas.Frezon
     };

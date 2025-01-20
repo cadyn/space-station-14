@@ -1,5 +1,5 @@
 using Content.Shared.Radiation.Components;
-using Content.Shared.Spawners.Components;
+using Robust.Shared.Spawners;
 using Robust.Shared.Timing;
 
 namespace Content.Shared.Radiation.Systems;
@@ -26,7 +26,7 @@ public sealed class RadiationPulseSystem : EntitySystem
         // try to get radiation range or keep default visual range
         if (TryComp<RadiationSourceComponent>(uid, out var radSource))
         {
-            component.VisualRange = radSource.Range;
+            component.VisualRange = radSource.Intensity / radSource.Slope;
         }
     }
 }

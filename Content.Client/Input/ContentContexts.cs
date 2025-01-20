@@ -14,22 +14,40 @@ namespace Content.Client.Input
             var common = contexts.GetContext("common");
             common.AddFunction(ContentKeyFunctions.FocusChat);
             common.AddFunction(ContentKeyFunctions.FocusLocalChat);
+            common.AddFunction(ContentKeyFunctions.FocusEmote);
             common.AddFunction(ContentKeyFunctions.FocusWhisperChat);
             common.AddFunction(ContentKeyFunctions.FocusRadio);
+            common.AddFunction(ContentKeyFunctions.FocusLOOC);
             common.AddFunction(ContentKeyFunctions.FocusOOC);
             common.AddFunction(ContentKeyFunctions.FocusAdminChat);
             common.AddFunction(ContentKeyFunctions.FocusConsoleChat);
             common.AddFunction(ContentKeyFunctions.FocusDeadChat);
             common.AddFunction(ContentKeyFunctions.CycleChatChannelForward);
             common.AddFunction(ContentKeyFunctions.CycleChatChannelBackward);
+            common.AddFunction(ContentKeyFunctions.EscapeContext);
             common.AddFunction(ContentKeyFunctions.ExamineEntity);
-            common.AddFunction(ContentKeyFunctions.OpenInfo);
+            common.AddFunction(ContentKeyFunctions.OpenAHelp);
             common.AddFunction(ContentKeyFunctions.TakeScreenshot);
             common.AddFunction(ContentKeyFunctions.TakeScreenshotNoUI);
+            common.AddFunction(ContentKeyFunctions.ToggleFullscreen);
+            common.AddFunction(ContentKeyFunctions.MoveStoredItem);
+            common.AddFunction(ContentKeyFunctions.RotateStoredItem);
+            common.AddFunction(ContentKeyFunctions.SaveItemLocation);
             common.AddFunction(ContentKeyFunctions.Point);
+            common.AddFunction(ContentKeyFunctions.ZoomOut);
+            common.AddFunction(ContentKeyFunctions.ZoomIn);
+            common.AddFunction(ContentKeyFunctions.ResetZoom);
+            common.AddFunction(ContentKeyFunctions.InspectEntity);
+            common.AddFunction(ContentKeyFunctions.ToggleRoundEndSummaryWindow);
 
             // Not in engine, because engine cannot check for sanbox/admin status before starting placement.
             common.AddFunction(ContentKeyFunctions.EditorCopyObject);
+
+            // Not in engine because the engine doesn't understand what a flipped object is
+            common.AddFunction(ContentKeyFunctions.EditorFlipObject);
+
+            // Not in engine so that the RCD can rotate objects
+            common.AddFunction(EngineKeyFunctions.EditorRotateObject);
 
             var human = contexts.GetContext("human");
             human.AddFunction(EngineKeyFunctions.MoveUp);
@@ -42,6 +60,7 @@ namespace Content.Client.Input
             human.AddFunction(ContentKeyFunctions.UseItemInHand);
             human.AddFunction(ContentKeyFunctions.AltUseItemInHand);
             human.AddFunction(ContentKeyFunctions.OpenCharacterMenu);
+            human.AddFunction(ContentKeyFunctions.OpenEmotesMenu);
             human.AddFunction(ContentKeyFunctions.ActivateItemInWorld);
             human.AddFunction(ContentKeyFunctions.ThrowItemInHand);
             human.AddFunction(ContentKeyFunctions.AltActivateItemInWorld);
@@ -52,7 +71,12 @@ namespace Content.Client.Input
             human.AddFunction(ContentKeyFunctions.OpenInventoryMenu);
             human.AddFunction(ContentKeyFunctions.SmartEquipBackpack);
             human.AddFunction(ContentKeyFunctions.SmartEquipBelt);
+            human.AddFunction(ContentKeyFunctions.OpenBackpack);
+            human.AddFunction(ContentKeyFunctions.OpenBelt);
             human.AddFunction(ContentKeyFunctions.MouseMiddle);
+            human.AddFunction(ContentKeyFunctions.RotateObjectClockwise);
+            human.AddFunction(ContentKeyFunctions.RotateObjectCounterclockwise);
+            human.AddFunction(ContentKeyFunctions.FlipObject);
             human.AddFunction(ContentKeyFunctions.ArcadeUp);
             human.AddFunction(ContentKeyFunctions.ArcadeDown);
             human.AddFunction(ContentKeyFunctions.ArcadeLeft);
@@ -63,25 +87,11 @@ namespace Content.Client.Input
 
             // actions should be common (for ghosts, mobs, etc)
             common.AddFunction(ContentKeyFunctions.OpenActionsMenu);
-            common.AddFunction(ContentKeyFunctions.Hotbar0);
-            common.AddFunction(ContentKeyFunctions.Hotbar1);
-            common.AddFunction(ContentKeyFunctions.Hotbar2);
-            common.AddFunction(ContentKeyFunctions.Hotbar3);
-            common.AddFunction(ContentKeyFunctions.Hotbar4);
-            common.AddFunction(ContentKeyFunctions.Hotbar5);
-            common.AddFunction(ContentKeyFunctions.Hotbar6);
-            common.AddFunction(ContentKeyFunctions.Hotbar7);
-            common.AddFunction(ContentKeyFunctions.Hotbar8);
-            common.AddFunction(ContentKeyFunctions.Hotbar9);
-            common.AddFunction(ContentKeyFunctions.Loadout1);
-            common.AddFunction(ContentKeyFunctions.Loadout2);
-            common.AddFunction(ContentKeyFunctions.Loadout3);
-            common.AddFunction(ContentKeyFunctions.Loadout4);
-            common.AddFunction(ContentKeyFunctions.Loadout5);
-            common.AddFunction(ContentKeyFunctions.Loadout6);
-            common.AddFunction(ContentKeyFunctions.Loadout7);
-            common.AddFunction(ContentKeyFunctions.Loadout8);
-            common.AddFunction(ContentKeyFunctions.Loadout9);
+
+            foreach (var boundKey in ContentKeyFunctions.GetHotbarBoundKeys())
+            {
+                common.AddFunction(boundKey);
+            }
 
             var aghost = contexts.New("aghost", "common");
             aghost.AddFunction(EngineKeyFunctions.MoveUp);
@@ -91,7 +101,14 @@ namespace Content.Client.Input
             aghost.AddFunction(EngineKeyFunctions.Walk);
             aghost.AddFunction(ContentKeyFunctions.SwapHands);
             aghost.AddFunction(ContentKeyFunctions.Drop);
+            aghost.AddFunction(ContentKeyFunctions.UseItemInHand);
+            aghost.AddFunction(ContentKeyFunctions.AltUseItemInHand);
+            aghost.AddFunction(ContentKeyFunctions.ActivateItemInWorld);
             aghost.AddFunction(ContentKeyFunctions.ThrowItemInHand);
+            aghost.AddFunction(ContentKeyFunctions.AltActivateItemInWorld);
+            aghost.AddFunction(ContentKeyFunctions.TryPullObject);
+            aghost.AddFunction(ContentKeyFunctions.MovePulledObject);
+            aghost.AddFunction(ContentKeyFunctions.ReleasePulledObject);
 
             var ghost = contexts.New("ghost", "human");
             ghost.AddFunction(EngineKeyFunctions.MoveUp);
@@ -105,6 +122,7 @@ namespace Content.Client.Input
             common.AddFunction(ContentKeyFunctions.OpenTileSpawnWindow);
             common.AddFunction(ContentKeyFunctions.OpenDecalSpawnWindow);
             common.AddFunction(ContentKeyFunctions.OpenAdminMenu);
+            common.AddFunction(ContentKeyFunctions.OpenGuidebook);
         }
     }
 }

@@ -1,6 +1,9 @@
-using Content.Shared.Examine;
+using Content.Client.Weapons.Ranged.Components;
+using Content.Shared.Weapons.Ranged;
 using Content.Shared.Weapons.Ranged.Components;
 using Content.Shared.Weapons.Ranged.Events;
+using Content.Shared.Weapons.Ranged.Systems;
+using Robust.Client.GameObjects;
 using Robust.Shared.Containers;
 
 namespace Content.Client.Weapons.Ranged.Systems;
@@ -12,16 +15,39 @@ public sealed partial class GunSystem
         base.InitializeChamberMagazine();
         SubscribeLocalEvent<ChamberMagazineAmmoProviderComponent, AmmoCounterControlEvent>(OnChamberMagazineCounter);
         SubscribeLocalEvent<ChamberMagazineAmmoProviderComponent, UpdateAmmoCounterEvent>(OnChamberMagazineAmmoUpdate);
-        SubscribeLocalEvent<ChamberMagazineAmmoProviderComponent, EntRemovedFromContainerMessage>(OnChamberEntRemove);
+        SubscribeLocalEvent<ChamberMagazineAmmoProviderComponent, AppearanceChangeEvent>(OnChamberMagazineAppearance);
     }
 
-    private void OnChamberEntRemove(EntityUid uid, ChamberMagazineAmmoProviderComponent component, EntRemovedFromContainerMessage args)
+    private void OnChamberMagazineAppearance(EntityUid uid, ChamberMagazineAmmoProviderComponent component, ref AppearanceChangeEvent args)
     {
-        if (args.Container.ID != ChamberSlot) return;
+        if (args.Sprite == null ||
+            !args.Sprite.LayerMapTryGet(GunVisualLayers.Base, out var boltLayer) ||
+            !Appearance.TryGetData(uid, AmmoVisuals.BoltClosed, out bool boltClosed))
+        {
+            return;
+        }
+
+        // Maybe re-using base layer for this will bite me someday but screw you future sloth.
+        if (boltClosed)
+        {
+            args.Sprite.LayerSetState(boltLayer, "base");
+        }
+        else
+        {
+            args.Sprite.LayerSetState(boltLayer, "bolt-open");
+        }
+    }
+
+    protected override void OnMagazineSlotChange(EntityUid uid, MagazineAmmoProviderComponent component, ContainerModifiedMessage args)
+    {
+        base.OnMagazineSlotChange(uid, component, args);
+
+        if (ChamberSlot != args.Container.ID || args is not EntRemovedFromContainerMessage removedArgs)
+            return;
 
         // This is dirty af. Prediction moment.
         // We may be predicting spawning entities and the engine just removes them from the container so we'll just delete them.
-        if (args.Entity.IsClientSide())
+        if (IsClientSide(removedArgs.Entity))
             QueueDel(args.Entity);
 
         // AFAIK the only main alternative is having some client-specific handling via a bool or otherwise for the state.

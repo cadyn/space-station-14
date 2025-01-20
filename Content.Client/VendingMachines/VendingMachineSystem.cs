@@ -7,6 +7,8 @@ namespace Content.Client.VendingMachines;
 public sealed class VendingMachineSystem : SharedVendingMachineSystem
 {
     [Dependency] private readonly AnimationPlayerSystem _animationPlayer = default!;
+    [Dependency] private readonly SharedAppearanceSystem _appearanceSystem = default!;
+    [Dependency] private readonly SharedUserInterfaceSystem _uiSystem = default!;
 
     public override void Initialize()
     {
@@ -14,6 +16,15 @@ public sealed class VendingMachineSystem : SharedVendingMachineSystem
 
         SubscribeLocalEvent<VendingMachineComponent, AppearanceChangeEvent>(OnAppearanceChange);
         SubscribeLocalEvent<VendingMachineComponent, AnimationCompletedEvent>(OnAnimationCompleted);
+        SubscribeLocalEvent<VendingMachineComponent, AfterAutoHandleStateEvent>(OnVendingAfterState);
+    }
+
+    private void OnVendingAfterState(EntityUid uid, VendingMachineComponent component, ref AfterAutoHandleStateEvent args)
+    {
+        if (_uiSystem.TryGetOpenUi<VendingMachineBoundUserInterface>(uid, VendingMachineUiKey.Key, out var bui))
+        {
+            bui.Refresh();
+        }
     }
 
     private void OnAnimationCompleted(EntityUid uid, VendingMachineComponent component, AnimationCompletedEvent args)
@@ -21,7 +32,13 @@ public sealed class VendingMachineSystem : SharedVendingMachineSystem
         if (!TryComp<SpriteComponent>(uid, out var sprite))
             return;
 
-        UpdateAppearance(uid, VendingMachineVisualState.Normal, component, sprite);
+        if (!TryComp<AppearanceComponent>(uid, out var appearance) ||
+            !_appearanceSystem.TryGetData<VendingMachineVisualState>(uid, VendingMachineVisuals.VisualState, out var visualState, appearance))
+        {
+            visualState = VendingMachineVisualState.Normal;
+        }
+
+        UpdateAppearance(uid, visualState, component, sprite);
     }
 
     private void OnAppearanceChange(EntityUid uid, VendingMachineComponent component, ref AppearanceChangeEvent args)
@@ -129,20 +146,4 @@ public sealed class VendingMachineSystem : SharedVendingMachineSystem
 
         sprite.LayerSetVisible(actualLayer, false);
     }
-}
-
-public enum VendingMachineVisualLayers : byte
-{
-    /// <summary>
-    /// Off / Broken. The other layers will overlay this if the machine is on.
-    /// </summary>
-    Base,
-    /// <summary>
-    /// Normal / Deny / Eject
-    /// </summary>    
-    BaseUnshaded,
-    /// <summary>
-    /// Screens that are persistent (where the machine is not off or broken)
-    /// </summary>
-    Screen
 }

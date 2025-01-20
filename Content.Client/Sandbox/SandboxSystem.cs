@@ -1,12 +1,11 @@
 using Content.Client.Administration.Managers;
-using Content.Client.HUD;
+using Content.Client.Movement.Systems;
 using Content.Shared.Sandbox;
 using Robust.Client.Console;
 using Robust.Client.Placement;
 using Robust.Client.Placement.Modes;
-using Robust.Client.UserInterface;
 using Robust.Shared.Map;
-using Robust.Shared.Players;
+using Robust.Shared.Player;
 
 namespace Content.Client.Sandbox
 {
@@ -16,8 +15,9 @@ namespace Content.Client.Sandbox
         [Dependency] private readonly IClientConsoleHost _consoleHost = default!;
         [Dependency] private readonly IMapManager _map = default!;
         [Dependency] private readonly IPlacementManager _placement = default!;
-        [Dependency] private readonly IUserInterfaceManager _userInterfaceManager = default!;
-        [Dependency] private readonly IGameHud _gameHud = default!;
+        [Dependency] private readonly ContentEyeSystem _contentEye = default!;
+        [Dependency] private readonly SharedTransformSystem _transform = default!;
+        [Dependency] private readonly SharedMapSystem _mapSystem = default!;
 
         private bool _sandboxEnabled;
         public bool SandboxAllowed { get; private set; }
@@ -39,12 +39,10 @@ namespace Content.Client.Sandbox
             if (SandboxAllowed)
             {
                 SandboxEnabled?.Invoke();
-                _gameHud.SandboxButtonVisible = true;
             }
             else
             {
                 SandboxDisabled?.Invoke();
-                _gameHud.SandboxButtonVisible = false;
             }
         }
 
@@ -95,7 +93,7 @@ namespace Content.Client.Sandbox
                 && EntityManager.TryGetComponent(uid, out MetaDataComponent? comp)
                 && !comp.EntityDeleted)
             {
-                if (comp.EntityPrototype == null || comp.EntityPrototype.NoSpawn || comp.EntityPrototype.Abstract)
+                if (comp.EntityPrototype == null || comp.EntityPrototype.HideSpawnMenu || comp.EntityPrototype.Abstract)
                     return false;
 
                 if (_placement.Eraser)
@@ -112,7 +110,8 @@ namespace Content.Client.Sandbox
             }
 
             // Try copy tile.
-            if (!_map.TryFindGridAt(coords.ToMap(EntityManager), out var grid) || !grid.TryGetTileRef(coords, out var tileRef))
+
+            if (!_map.TryFindGridAt(_transform.ToMapCoordinates(coords), out var gridUid, out var grid) || !_mapSystem.TryGetTileRef(gridUid, grid, coords, out var tileRef))
                 return false;
 
             if (_placement.Eraser)
@@ -136,7 +135,7 @@ namespace Content.Client.Sandbox
 
         public void ToggleFov()
         {
-            _consoleHost.ExecuteCommand("togglefov");
+            _contentEye.RequestToggleFov();
         }
 
         public void ToggleShadows()
@@ -157,11 +156,6 @@ namespace Content.Client.Sandbox
         public void ShowBb()
         {
             _consoleHost.ExecuteCommand("physics shapes");
-        }
-
-        public void MachineLinking()
-        {
-            _consoleHost.ExecuteCommand("signallink");
         }
     }
 }

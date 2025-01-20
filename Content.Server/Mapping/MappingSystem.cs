@@ -1,7 +1,8 @@
-﻿using System.IO;
+using System.IO;
 using Content.Server.Administration;
 using Content.Shared.Administration;
 using Content.Shared.CCVar;
+using Robust.Server.GameObjects;
 using Robust.Server.Maps;
 using Robust.Shared.Configuration;
 using Robust.Shared.Console;
@@ -20,9 +21,9 @@ public sealed class MappingSystem : EntitySystem
     [Dependency] private readonly IConsoleHost _conHost = default!;
     [Dependency] private readonly IGameTiming _timing = default!;
     [Dependency] private readonly IConfigurationManager _cfg = default!;
-    [Dependency] private readonly IMapLoader _mapLoader = default!;
     [Dependency] private readonly IMapManager _mapManager = default!;
     [Dependency] private readonly IResourceManager _resMan = default!;
+    [Dependency] private readonly MapLoaderSystem _map = default!;
 
     // Not a comp because I don't want to deal with this getting saved onto maps ever
     /// <summary>
@@ -31,7 +32,6 @@ public sealed class MappingSystem : EntitySystem
     /// <returns></returns>
     private Dictionary<MapId, (TimeSpan next, string fileName)> _currentlyAutosaving = new();
 
-    private ISawmill _sawmill = default!;
     private bool _autosaveEnabled;
 
     public override void Initialize()
@@ -43,15 +43,7 @@ public sealed class MappingSystem : EntitySystem
             "autosave <map> <path if enabling>",
             ToggleAutosaveCommand);
 
-        _sawmill = Logger.GetSawmill("autosave");
-        _cfg.OnValueChanged(CCVars.AutosaveEnabled, SetAutosaveEnabled, true);
-    }
-
-    public override void Shutdown()
-    {
-        base.Shutdown();
-
-        _cfg.UnsubValueChanged(CCVars.AutosaveEnabled, SetAutosaveEnabled);
+        Subs.CVar(_cfg, CCVars.AutosaveEnabled, SetAutosaveEnabled, true);
     }
 
     private void SetAutosaveEnabled(bool b)
@@ -75,18 +67,18 @@ public sealed class MappingSystem : EntitySystem
 
             if (!_mapManager.MapExists(map) || _mapManager.IsMapInitialized(map))
             {
-                _sawmill.Warning($"Can't autosave map {map}; it doesn't exist, or is initialized. Removing from autosave.");
+                Log.Warning($"Can't autosave map {map}; it doesn't exist, or is initialized. Removing from autosave.");
                 _currentlyAutosaving.Remove(map);
                 return;
             }
 
             var saveDir = Path.Combine(_cfg.GetCVar(CCVars.AutosaveDirectory), name);
-            _resMan.UserData.CreateDir(new ResourcePath(saveDir).ToRootedPath());
+            _resMan.UserData.CreateDir(new ResPath(saveDir).ToRootedPath());
 
             var path = Path.Combine(saveDir, $"{DateTime.Now.ToString("yyyy-M-dd_HH.mm.ss")}-AUTO.yml");
             _currentlyAutosaving[map] = (CalculateNextTime(), name);
-            _sawmill.Info($"Autosaving map {name} ({map}) to {path}. Next save in {ReadableTimeLeft(map)} seconds.");
-            _mapLoader.SaveMap(map, path);
+            Log.Info($"Autosaving map {name} ({map}) to {path}. Next save in {ReadableTimeLeft(map)} seconds.");
+            _map.SaveMap(map, path);
         }
     }
 
@@ -111,17 +103,17 @@ public sealed class MappingSystem : EntitySystem
         {
             if (!_mapManager.MapExists(map) || _mapManager.IsMapInitialized(map))
             {
-                _sawmill.Warning("Tried to enable autosaving on non-existant or already initialized map!");
+                Log.Warning("Tried to enable autosaving on non-existant or already initialized map!");
                 _currentlyAutosaving.Remove(map);
                 return;
             }
 
-            _sawmill.Info($"Started autosaving map {path} ({map}). Next save in {ReadableTimeLeft(map)} seconds.");
+            Log.Info($"Started autosaving map {path} ({map}). Next save in {ReadableTimeLeft(map)} seconds.");
         }
         else
         {
             _currentlyAutosaving.Remove(map);
-            _sawmill.Info($"Stopped autosaving on map {map}");
+            Log.Info($"Stopped autosaving on map {map}");
         }
     }
 

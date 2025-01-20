@@ -3,17 +3,15 @@ using Content.Shared.Atmos;
 namespace Content.Server.Atmos.Portable
 {
     [RegisterComponent]
-    public sealed class PortableScrubberComponent : Component
+    public sealed partial class PortableScrubberComponent : Component
     {
         /// <summary>
         /// The air inside this machine.
         /// </summary>
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("gasMixture")]
-        public GasMixture Air { get; } = new();
+        [DataField("gasMixture"), ViewVariables(VVAccess.ReadWrite)]
+        public GasMixture Air { get; private set; } = new();
 
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("port")]
+        [DataField("port"), ViewVariables(VVAccess.ReadWrite)]
         public string PortName { get; set; } = "port";
 
         /// <summary>
@@ -28,23 +26,24 @@ namespace Content.Server.Atmos.Portable
             Gas.Plasma,
             Gas.Tritium,
             Gas.WaterVapor,
-            Gas.Miasma,
+            Gas.Ammonia,
             Gas.NitrousOxide,
             Gas.Frezon
         };
 
-        /// <summary>
-        /// Can this scrubber hold more gas?
-        /// </summary>
-        public bool Full => Air.Pressure >= MaxPressure;
+        [ViewVariables(VVAccess.ReadWrite)]
+        public bool Enabled = true;
 
         /// <summary>
         /// Maximum internal pressure before it refuses to take more.
         /// </summary>
-        [DataField("maxPressure")]
-        public float MaxPressure = 3000f;
-        [DataField("transferRate")]
-        public float TransferRate = 1000f;
-        public bool Enabled = true;
+        [DataField, ViewVariables(VVAccess.ReadWrite)]
+        public float MaxPressure = 2500;
+
+        /// <summary>
+        /// The speed at which gas is scrubbed from the environment.
+        /// </summary>
+        [DataField, ViewVariables(VVAccess.ReadWrite)]
+        public float TransferRate = 800;
     }
 }

@@ -1,24 +1,26 @@
 using Content.Server.Atmos.EntitySystems;
-using Content.Shared.Atmos.Piping;
 using Content.Server.Atmos.Piping.Binary.Components;
 using Content.Server.Atmos.Piping.Components;
 using Content.Server.NodeContainer;
+using Content.Server.NodeContainer.EntitySystems;
 using Content.Server.NodeContainer.Nodes;
 using Content.Shared.Atmos;
+using Content.Shared.Atmos.Piping;
+using Content.Shared.Atmos.Piping.Components;
 using Content.Shared.Audio;
 using Content.Shared.Examine;
 using JetBrains.Annotations;
+using Robust.Server.GameObjects;
 
 namespace Content.Server.Atmos.Piping.Binary.EntitySystems
 {
     [UsedImplicitly]
     public sealed class GasReyclerSystem : EntitySystem
     {
+        [Dependency] private readonly AppearanceSystem _appearance = default!;
         [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
         [Dependency] private readonly SharedAmbientSoundSystem _ambientSoundSystem = default!;
-
-        private const float MinTemp = 300 + Atmospherics.T0C; // 300 C
-        private const float MinPressure = 30 * Atmospherics.OneAtmosphere;  // 3 MPa
+        [Dependency] private readonly NodeContainerSystem _nodeContainer = default!;
 
         public override void Initialize()
         {
@@ -29,53 +31,52 @@ namespace Content.Server.Atmos.Piping.Binary.EntitySystems
             SubscribeLocalEvent<GasRecyclerComponent, ExaminedEvent>(OnExamined);
         }
 
-        private void OnEnabled(EntityUid uid, GasRecyclerComponent comp, AtmosDeviceEnabledEvent args)
+        private void OnEnabled(EntityUid uid, GasRecyclerComponent comp, ref AtmosDeviceEnabledEvent args)
         {
             UpdateAppearance(uid, comp);
         }
 
-        private void OnExamined(EntityUid uid, GasRecyclerComponent comp, ExaminedEvent args)
+        private void OnExamined(Entity<GasRecyclerComponent> ent, ref ExaminedEvent args)
         {
-            if (!EntityManager.GetComponent<TransformComponent>(comp.Owner).Anchored || !args.IsInDetailsRange) // Not anchored? Out of range? No status.
+            var comp = ent.Comp;
+            if (!EntityManager.GetComponent<TransformComponent>(ent).Anchored || !args.IsInDetailsRange) // Not anchored? Out of range? No status.
                 return;
 
-            if (!EntityManager.TryGetComponent(uid, out NodeContainerComponent? nodeContainer)
-                || !nodeContainer.TryGetNode(comp.InletName, out PipeNode? inlet)
-                || !nodeContainer.TryGetNode(comp.OutletName, out PipeNode? outlet))
-            {
+            if (!_nodeContainer.TryGetNode(ent.Owner, comp.InletName, out PipeNode? inlet))
                 return;
-            }
 
-            if (comp.Reacting)
+            using (args.PushGroup(nameof(GasRecyclerComponent)))
             {
-                args.PushMarkup(Loc.GetString("gas-recycler-reacting"));
-            }
-            else
-            {
-                if (inlet.Air.Pressure < MinPressure)
+                if (comp.Reacting)
                 {
-                    args.PushMarkup(Loc.GetString("gas-recycler-low-pressure"));
+                    args.PushMarkup(Loc.GetString("gas-recycler-reacting"));
                 }
-
-                if (inlet.Air.Temperature < MinTemp)
+                else
                 {
-                    args.PushMarkup(Loc.GetString("gas-recycler-low-temperature"));
+                    if (inlet.Air.Pressure < comp.MinPressure)
+                    {
+                        args.PushMarkup(Loc.GetString("gas-recycler-low-pressure"));
+                    }
+
+                    if (inlet.Air.Temperature < comp.MinTemp)
+                    {
+                        args.PushMarkup(Loc.GetString("gas-recycler-low-temperature"));
+                    }
                 }
             }
         }
 
-        private void OnUpdate(EntityUid uid, GasRecyclerComponent comp, AtmosDeviceUpdateEvent args)
+        private void OnUpdate(Entity<GasRecyclerComponent> ent, ref AtmosDeviceUpdateEvent args)
         {
-            if (!EntityManager.TryGetComponent(uid, out NodeContainerComponent? nodeContainer)
-                || !nodeContainer.TryGetNode(comp.InletName, out PipeNode? inlet)
-                || !nodeContainer.TryGetNode(comp.OutletName, out PipeNode? outlet))
+            var comp = ent.Comp;
+            if (!_nodeContainer.TryGetNodes(ent.Owner, comp.InletName, comp.OutletName, out PipeNode? inlet, out PipeNode? outlet))
             {
-                _ambientSoundSystem.SetAmbience(comp.Owner, false);
+                _ambientSoundSystem.SetAmbience(ent, false);
                 return;
             }
 
             // The gas recycler is a passive device, so it permits gas flow even if nothing is being reacted.
-            comp.Reacting = inlet.Air.Temperature >= MinTemp && inlet.Air.Pressure >= MinPressure;
+            comp.Reacting = inlet.Air.Temperature >= comp.MinTemp && inlet.Air.Pressure >= comp.MinPressure;
             var removed = inlet.Air.RemoveVolume(PassiveTransferVol(inlet.Air, outlet.Air));
             if (comp.Reacting)
             {
@@ -88,8 +89,8 @@ namespace Content.Server.Atmos.Piping.Binary.EntitySystems
             }
 
             _atmosphereSystem.Merge(outlet.Air, removed);
-            UpdateAppearance(uid, comp);
-            _ambientSoundSystem.SetAmbience(comp.Owner, true);
+            UpdateAppearance(ent, comp);
+            _ambientSoundSystem.SetAmbience(ent, true);
         }
 
         public float PassiveTransferVol(GasMixture inlet, GasMixture outlet)
@@ -99,22 +100,22 @@ namespace Content.Server.Atmos.Piping.Binary.EntitySystems
                 return 0;
             }
             float overPressConst = 300; // pressure difference (in atm) to get 200 L/sec transfer rate
-            float alpha = Atmospherics.MaxTransferRate / (float)Math.Sqrt(overPressConst*Atmospherics.OneAtmosphere);
+            float alpha = Atmospherics.MaxTransferRate * _atmosphereSystem.PumpSpeedup() / (float)Math.Sqrt(overPressConst*Atmospherics.OneAtmosphere);
             return alpha * (float)Math.Sqrt(inlet.Pressure - outlet.Pressure);
         }
 
-        private void OnDisabled(EntityUid uid, GasRecyclerComponent comp, AtmosDeviceDisabledEvent args)
+        private void OnDisabled(EntityUid uid, GasRecyclerComponent comp, ref AtmosDeviceDisabledEvent args)
         {
             comp.Reacting = false;
             UpdateAppearance(uid, comp);
         }
 
-        private void UpdateAppearance(EntityUid uid, GasRecyclerComponent? comp = null, AppearanceComponent? appearance = null)
+        private void UpdateAppearance(EntityUid uid, GasRecyclerComponent? comp = null)
         {
-            if (!Resolve(uid, ref comp, ref appearance, false))
+            if (!Resolve(uid, ref comp, false))
                 return;
 
-            appearance.SetData(PumpVisuals.Enabled, comp.Reacting);
+            _appearance.SetData(uid, PumpVisuals.Enabled, comp.Reacting);
         }
     }
 }

@@ -1,10 +1,12 @@
 using Content.Shared.Actions;
 using Content.Shared.Clothing.EntitySystems;
 using Content.Shared.Item;
+using Content.Shared.Light.Components;
 using Content.Shared.Toggleable;
+using Content.Shared.Verbs;
 using Robust.Shared.Audio;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.GameStates;
-using Robust.Shared.Player;
 using Robust.Shared.Utility;
 
 namespace Content.Shared.Light;
@@ -14,12 +16,16 @@ public abstract class SharedHandheldLightSystem : EntitySystem
     [Dependency] private readonly SharedItemSystem _itemSys = default!;
     [Dependency] private readonly ClothingSystem _clothingSys = default!;
     [Dependency] private readonly SharedActionsSystem _actionSystem = default!;
+    [Dependency] private readonly SharedAppearanceSystem _appearance = default!;
+    [Dependency] private readonly SharedAudioSystem _audio = default!;
 
     public override void Initialize()
     {
         base.Initialize();
         SubscribeLocalEvent<HandheldLightComponent, ComponentInit>(OnInit);
         SubscribeLocalEvent<HandheldLightComponent, ComponentHandleState>(OnHandleState);
+
+        SubscribeLocalEvent<HandheldLightComponent, GetVerbsEvent<ActivationVerb>>(AddToggleLightVerb);
     }
 
     private void OnInit(EntityUid uid, HandheldLightComponent component, ComponentInit args)
@@ -27,7 +33,7 @@ public abstract class SharedHandheldLightSystem : EntitySystem
         UpdateVisuals(uid, component);
 
         // Want to make sure client has latest data on level so battery displays properly.
-        Dirty(component);
+        Dirty(uid, component);
     }
 
     private void OnHandleState(EntityUid uid, HandheldLightComponent component, ref ComponentHandleState args)
@@ -52,10 +58,10 @@ public abstract class SharedHandheldLightSystem : EntitySystem
         if (makeNoise)
         {
             var sound = component.Activated ? component.TurnOnSound : component.TurnOffSound;
-            SoundSystem.Play(sound.GetSound(), Filter.Pvs(component.Owner, entityManager: EntityManager), component.Owner);
+            _audio.PlayPvs(sound, uid);
         }
-            
-        Dirty(component);
+
+        Dirty(uid, component);
         UpdateVisuals(uid, component);
     }
 
@@ -71,9 +77,30 @@ public abstract class SharedHandheldLightSystem : EntitySystem
             _clothingSys.SetEquippedPrefix(uid, prefix);
         }
 
-        if (component.ToggleAction != null)
-            _actionSystem.SetToggled(component.ToggleAction, component.Activated);
+        if (component.ToggleActionEntity != null)
+            _actionSystem.SetToggled(component.ToggleActionEntity, component.Activated);
 
-        appearance.SetData(ToggleableLightVisuals.Enabled, component.Activated);
+        _appearance.SetData(uid, ToggleableLightVisuals.Enabled, component.Activated, appearance);
     }
+
+    private void AddToggleLightVerb(Entity<HandheldLightComponent> ent, ref GetVerbsEvent<ActivationVerb> args)
+    {
+        if (!args.CanAccess || !args.CanInteract || !ent.Comp.ToggleOnInteract)
+            return;
+
+        var @event = args;
+        ActivationVerb verb = new()
+        {
+            Text = Loc.GetString("verb-common-toggle-light"),
+            Icon = new SpriteSpecifier.Texture(new ("/Textures/Interface/VerbIcons/light.svg.192dpi.png")),
+            Act = ent.Comp.Activated
+                ? () => TurnOff(ent)
+                : () => TurnOn(@event.User, ent)
+        };
+
+        args.Verbs.Add(verb);
+    }
+
+    public abstract bool TurnOff(Entity<HandheldLightComponent> ent, bool makeNoise = true);
+    public abstract bool TurnOn(EntityUid user, Entity<HandheldLightComponent> uid);
 }

@@ -1,5 +1,6 @@
 using Content.Server.Power.NodeGroups;
 using Content.Server.Power.Pow3r;
+using Content.Shared.Power.Components;
 
 namespace Content.Server.Power.Components
 {
@@ -8,11 +9,8 @@ namespace Content.Server.Power.Components
     ///     so that it can receive power from a <see cref="IApcNet"/>.
     /// </summary>
     [RegisterComponent]
-    public sealed class ApcPowerReceiverComponent : Component
+    public sealed partial class ApcPowerReceiverComponent : SharedApcPowerReceiverComponent
     {
-        [ViewVariables]
-        public bool Powered => (MathHelper.CloseToPercent(NetworkLoad.ReceivingPower, Load) || !NeedsPower) && !PowerDisabled;
-
         /// <summary>
         ///     Amount of charge this needs from an APC per second to function.
         /// </summary>
@@ -33,7 +31,7 @@ namespace Content.Server.Power.Components
             {
                 _needsPower = value;
                 // Reset this so next tick will do a power update.
-                PoweredLastUpdate = null;
+                Recalculate = true;
             }
         }
 
@@ -50,7 +48,8 @@ namespace Content.Server.Power.Components
             set => NetworkLoad.Enabled = !value;
         }
 
-        public bool? PoweredLastUpdate;
+        // TODO Is this needed? It forces a PowerChangedEvent when NeedsPower is toggled even if it changes to the same state.
+        public bool Recalculate;
 
         [ViewVariables]
         public PowerState.Load NetworkLoad { get; } = new PowerState.Load
@@ -59,27 +58,5 @@ namespace Content.Server.Power.Components
         };
 
         public float PowerReceived => NetworkLoad.ReceivingPower;
-
-        protected override void OnRemove()
-        {
-            Provider?.RemoveReceiver(this);
-
-            base.OnRemove();
-        }
-    }
-
-    /// <summary>
-    /// Raised whenever an ApcPowerReceiver becomes powered / unpowered.
-    /// </summary>
-    public sealed class PowerChangedEvent : EntityEventArgs
-    {
-        public readonly bool Powered;
-        public readonly float ReceivingPower;
-
-        public PowerChangedEvent(bool powered, float receivingPower)
-        {
-            Powered = powered;
-            ReceivingPower = receivingPower;
-        }
     }
 }

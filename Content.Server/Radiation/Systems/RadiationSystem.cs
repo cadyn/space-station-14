@@ -1,52 +1,79 @@
-﻿using Content.Shared.Radiation.Events;
+﻿using Content.Server.Radiation.Components;
+using Content.Shared.Radiation.Components;
+using Content.Shared.Radiation.Events;
+using Content.Shared.Stacks;
+using Robust.Shared.Configuration;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 
 namespace Content.Server.Radiation.Systems;
 
-public sealed class RadiationSystem : EntitySystem
+public sealed partial class RadiationSystem : EntitySystem
 {
-    [Dependency] private readonly EntityLookupSystem _lookup = default!;
+    [Dependency] private readonly IMapManager _mapManager = default!;
+    [Dependency] private readonly IConfigurationManager _cfg = default!;
+    [Dependency] private readonly SharedTransformSystem _transform = default!;
+    [Dependency] private readonly SharedStackSystem _stack = default!;
 
-    private const float RadiationCooldown = 1.0f;
+    private EntityQuery<RadiationBlockingContainerComponent> _blockerQuery;
+    private EntityQuery<RadiationGridResistanceComponent> _resistanceQuery;
+    private EntityQuery<MapGridComponent> _gridQuery;
+    private EntityQuery<StackComponent> _stackQuery;
+
     private float _accumulator;
+    private List<SourceData> _sources = new();
+
+    public override void Initialize()
+    {
+        base.Initialize();
+        SubscribeCvars();
+        InitRadBlocking();
+
+        _blockerQuery = GetEntityQuery<RadiationBlockingContainerComponent>();
+        _resistanceQuery = GetEntityQuery<RadiationGridResistanceComponent>();
+        _gridQuery = GetEntityQuery<MapGridComponent>();
+        _stackQuery = GetEntityQuery<StackComponent>();
+    }
 
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
+
         _accumulator += frameTime;
+        if (_accumulator < GridcastUpdateRate)
+            return;
 
-        while (_accumulator > RadiationCooldown)
-        {
-            _accumulator -= RadiationCooldown;
-
-            // All code here runs effectively every RadiationCooldown seconds, so use that as the "frame time".
-            foreach (var comp in EntityManager.EntityQuery<RadiationSourceComponent>())
-            {
-                var ent = comp.Owner;
-                if (Deleted(ent))
-                    continue;
-
-                var cords = Transform(ent).MapPosition;
-                IrradiateRange(cords, comp.Range, comp.RadsPerSecond, RadiationCooldown);
-            }
-        }
-    }
-
-    public void IrradiateRange(MapCoordinates coordinates, float range, float radsPerSecond, float time)
-    {
-        var lookUp = _lookup.GetEntitiesInRange(coordinates, range);
-        foreach (var uid in lookUp)
-        {
-            if (Deleted(uid))
-                continue;
-
-            IrradiateEntity(uid, radsPerSecond, time);
-        }
+        UpdateGridcast();
+        UpdateResistanceDebugOverlay();
+        _accumulator = 0f;
     }
 
     public void IrradiateEntity(EntityUid uid, float radsPerSecond, float time)
     {
         var msg = new OnIrradiatedEvent(time, radsPerSecond);
-        RaiseLocalEvent(uid, msg, true);
+        RaiseLocalEvent(uid, msg);
+    }
+
+    public void SetSourceEnabled(Entity<RadiationSourceComponent?> entity, bool val)
+    {
+        if (!Resolve(entity, ref entity.Comp, false))
+            return;
+
+        entity.Comp.Enabled = val;
+    }
+
+    /// <summary>
+    ///     Marks entity to receive/ignore radiation rays.
+    /// </summary>
+    public void SetCanReceive(EntityUid uid, bool canReceive)
+    {
+        if (canReceive)
+        {
+            EnsureComp<RadiationReceiverComponent>(uid);
+        }
+        else
+        {
+            RemComp<RadiationReceiverComponent>(uid);
+        }
     }
 }

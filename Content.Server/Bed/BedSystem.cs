@@ -1,20 +1,18 @@
-using Content.Shared.Damage;
+using Content.Server.Actions;
 using Content.Server.Bed.Components;
-using Content.Server.Buckle.Components;
 using Content.Server.Body.Systems;
-using Content.Shared.Buckle.Components;
-using Content.Shared.Body.Components;
-using Content.Shared.Bed;
-using Content.Shared.Bed.Sleep;
-using Content.Server.Bed.Sleep;
 using Content.Server.Power.Components;
 using Content.Server.Power.EntitySystems;
+using Content.Shared.Bed;
+using Content.Shared.Bed.Sleep;
+using Content.Shared.Body.Components;
+using Content.Shared.Buckle.Components;
+using Content.Shared.Damage;
 using Content.Shared.Emag.Systems;
-using Content.Shared.MobState.Components;
-using Content.Server.Actions;
-using Content.Server.MobState;
-using Content.Shared.Actions.ActionTypes;
-using Robust.Shared.Prototypes;
+using Content.Shared.Mobs.Systems;
+using Content.Shared.Power;
+using Robust.Shared.Timing;
+using Robust.Shared.Utility;
 
 namespace Content.Server.Bed
 {
@@ -22,51 +20,53 @@ namespace Content.Server.Bed
     {
         [Dependency] private readonly DamageableSystem _damageableSystem = default!;
         [Dependency] private readonly ActionsSystem _actionsSystem = default!;
-        [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
         [Dependency] private readonly SleepingSystem _sleepingSystem = default!;
+        [Dependency] private readonly SharedAppearanceSystem _appearance = default!;
         [Dependency] private readonly MobStateSystem _mobStateSystem = default!;
+        [Dependency] private readonly IGameTiming _timing = default!;
+
         public override void Initialize()
         {
             base.Initialize();
-            SubscribeLocalEvent<HealOnBuckleComponent, BuckleChangeEvent>(ManageUpdateList);
-            SubscribeLocalEvent<StasisBedComponent, BuckleChangeEvent>(OnBuckleChange);
+            SubscribeLocalEvent<HealOnBuckleComponent, StrappedEvent>(OnStrapped);
+            SubscribeLocalEvent<HealOnBuckleComponent, UnstrappedEvent>(OnUnstrapped);
+            SubscribeLocalEvent<StasisBedComponent, StrappedEvent>(OnStasisStrapped);
+            SubscribeLocalEvent<StasisBedComponent, UnstrappedEvent>(OnStasisUnstrapped);
             SubscribeLocalEvent<StasisBedComponent, PowerChangedEvent>(OnPowerChanged);
             SubscribeLocalEvent<StasisBedComponent, GotEmaggedEvent>(OnEmagged);
         }
 
-        private void ManageUpdateList(EntityUid uid, HealOnBuckleComponent component, BuckleChangeEvent args)
+        private void OnStrapped(Entity<HealOnBuckleComponent> bed, ref StrappedEvent args)
         {
-            _prototypeManager.TryIndex<InstantActionPrototype>("Sleep", out var sleepAction);
-            if (args.Buckling)
-            {
-                AddComp<HealOnBuckleHealingComponent>(uid);
-                if (sleepAction != null)
-                    _actionsSystem.AddAction(args.BuckledEntity, new InstantAction(sleepAction), null);
-                return;
-            }
+            EnsureComp<HealOnBuckleHealingComponent>(bed);
+            bed.Comp.NextHealTime = _timing.CurTime + TimeSpan.FromSeconds(bed.Comp.HealTime);
+            _actionsSystem.AddAction(args.Buckle, ref bed.Comp.SleepAction, SleepingSystem.SleepActionId, bed);
 
-            if (sleepAction != null)
-                _actionsSystem.RemoveAction(args.BuckledEntity, sleepAction, null);
+            // Single action entity, cannot strap multiple entities to the same bed.
+            DebugTools.AssertEqual(args.Strap.Comp.BuckledEntities.Count, 1);
+        }
 
-            _sleepingSystem.TryWaking(args.BuckledEntity);
-            RemComp<HealOnBuckleHealingComponent>(uid);
-            component.Accumulator = 0;
+        private void OnUnstrapped(Entity<HealOnBuckleComponent> bed, ref UnstrappedEvent args)
+        {
+            _actionsSystem.RemoveAction(args.Buckle, bed.Comp.SleepAction);
+            _sleepingSystem.TryWaking(args.Buckle.Owner);
+            RemComp<HealOnBuckleHealingComponent>(bed);
         }
 
         public override void Update(float frameTime)
         {
             base.Update(frameTime);
 
-            foreach (var (_, bedComponent, strapComponent) in EntityQuery<HealOnBuckleHealingComponent, HealOnBuckleComponent, StrapComponent>())
+            var query = EntityQueryEnumerator<HealOnBuckleHealingComponent, HealOnBuckleComponent, StrapComponent>();
+            while (query.MoveNext(out var uid, out _, out var bedComponent, out var strapComponent))
             {
-                bedComponent.Accumulator += frameTime;
-
-                if (bedComponent.Accumulator < bedComponent.HealTime)
+                if (_timing.CurTime < bedComponent.NextHealTime)
                     continue;
 
-                bedComponent.Accumulator -= bedComponent.HealTime;
+                bedComponent.NextHealTime += TimeSpan.FromSeconds(bedComponent.HealTime);
 
-                if (strapComponent.BuckledEntities.Count == 0) continue;
+                if (strapComponent.BuckledEntities.Count == 0)
+                    continue;
 
                 foreach (var healedEntity in strapComponent.BuckledEntities)
                 {
@@ -78,43 +78,43 @@ namespace Content.Server.Bed
                     if (HasComp<SleepingComponent>(healedEntity))
                         damage *= bedComponent.SleepMultiplier;
 
-                    _damageableSystem.TryChangeDamage(healedEntity, damage, true);
+                    _damageableSystem.TryChangeDamage(healedEntity, damage, true, origin: uid);
                 }
             }
         }
 
         private void UpdateAppearance(EntityUid uid, bool isOn)
         {
-            if (!TryComp<AppearanceComponent>(uid, out var appearance))
-                return;
-
-            appearance.SetData(StasisBedVisuals.IsOn, isOn);
+            _appearance.SetData(uid, StasisBedVisuals.IsOn, isOn);
         }
 
-        private void OnBuckleChange(EntityUid uid, StasisBedComponent component, BuckleChangeEvent args)
+        private void OnStasisStrapped(Entity<StasisBedComponent> bed, ref StrappedEvent args)
         {
-            // In testing this also received an unbuckle event when the bed is destroyed
-            // So don't worry about that
-            if (!TryComp<SharedBodyComponent>(args.BuckledEntity, out var body))
+            if (!HasComp<BodyComponent>(args.Buckle) || !this.IsPowered(bed, EntityManager))
                 return;
 
-            if (!this.IsPowered(uid, EntityManager))
-                return;
-
-            var metabolicEvent = new ApplyMetabolicMultiplierEvent()
-                {Uid = args.BuckledEntity, Multiplier = component.Multiplier, Apply = args.Buckling};
-            RaiseLocalEvent(args.BuckledEntity, metabolicEvent, false);
+            var metabolicEvent = new ApplyMetabolicMultiplierEvent(args.Buckle, bed.Comp.Multiplier, true);
+            RaiseLocalEvent(args.Buckle, ref metabolicEvent);
         }
 
-        private void OnPowerChanged(EntityUid uid, StasisBedComponent component, PowerChangedEvent args)
+        private void OnStasisUnstrapped(Entity<StasisBedComponent> bed, ref UnstrappedEvent args)
+        {
+            if (!HasComp<BodyComponent>(args.Buckle) || !this.IsPowered(bed, EntityManager))
+                return;
+
+            var metabolicEvent = new ApplyMetabolicMultiplierEvent(args.Buckle, bed.Comp.Multiplier, false);
+            RaiseLocalEvent(args.Buckle, ref metabolicEvent);
+        }
+
+        private void OnPowerChanged(EntityUid uid, StasisBedComponent component, ref PowerChangedEvent args)
         {
             UpdateAppearance(uid, args.Powered);
             UpdateMetabolisms(uid, component, args.Powered);
         }
 
-        private void OnEmagged(EntityUid uid, StasisBedComponent component, GotEmaggedEvent args)
+        private void OnEmagged(EntityUid uid, StasisBedComponent component, ref GotEmaggedEvent args)
         {
-            // Repeatable
+            args.Repeatable = true;
             // Reset any metabolisms first so they receive the multiplier correctly
             UpdateMetabolisms(uid, component, false);
             component.Multiplier = 1 / component.Multiplier;
@@ -129,11 +129,9 @@ namespace Content.Server.Bed
 
             foreach (var buckledEntity in strap.BuckledEntities)
             {
-                var metabolicEvent = new ApplyMetabolicMultiplierEvent()
-                    {Uid = buckledEntity, Multiplier = component.Multiplier, Apply = shouldApply};
-                RaiseLocalEvent(buckledEntity, metabolicEvent, false);
+                var metabolicEvent = new ApplyMetabolicMultiplierEvent(buckledEntity, component.Multiplier, shouldApply);
+                RaiseLocalEvent(buckledEntity, ref metabolicEvent);
             }
         }
     }
 }
-

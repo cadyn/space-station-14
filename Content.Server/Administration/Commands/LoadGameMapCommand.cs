@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Numerics;
 using Content.Server.GameTicking;
 using Content.Server.Maps;
 using Content.Shared.Administration;
@@ -47,8 +48,8 @@ namespace Content.Server.Administration.Commands
                 {
                     loadOptions.Offset = new Vector2(x, y);
                 }
-                var (ents, grids) = gameTicker.LoadGameMap(gameMap, new MapId(mapId), loadOptions, stationName);
-                shell.WriteLine($"Loaded {ents.Count} entities and {grids.Count} grids.");
+                var grids = gameTicker.LoadGameMap(gameMap, new MapId(mapId), loadOptions, stationName);
+                shell.WriteLine($"Loaded {grids.Count} grids.");
             }
             else
             {

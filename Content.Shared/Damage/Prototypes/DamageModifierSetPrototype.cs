@@ -10,10 +10,10 @@ namespace Content.Shared.Damage.Prototypes
     ///     just want normal data to be deserialized.
     /// </remarks>
     [Prototype("damageModifierSet")]
-    public sealed class DamageModifierSetPrototype : DamageModifierSet, IPrototype
+    public sealed partial class DamageModifierSetPrototype : DamageModifierSet, IPrototype
     {
         [ViewVariables]
-        [IdDataFieldAttribute]
-        public string ID { get; } = default!;
+        [IdDataField]
+        public string ID { get; private set; } = default!;
     }
 }

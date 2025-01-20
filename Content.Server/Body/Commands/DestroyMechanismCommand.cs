@@ -1,7 +1,7 @@
 using Content.Server.Administration;
+using Content.Server.Body.Systems;
 using Content.Shared.Administration;
 using Content.Shared.Body.Components;
-using Robust.Server.Player;
 using Robust.Shared.Console;
 using Robust.Shared.Random;
 
@@ -16,7 +16,7 @@ namespace Content.Server.Body.Commands
 
         public void Execute(IConsoleShell shell, string argStr, string[] args)
         {
-            var player = shell.Player as IPlayerSession;
+            var player = shell.Player;
             if (player == null)
             {
                 shell.WriteLine("Only a player can run this command.");
@@ -35,7 +35,10 @@ namespace Content.Server.Body.Commands
                 return;
             }
 
-            if (!IoCManager.Resolve<IEntityManager>().TryGetComponent(attached, out SharedBodyComponent? body))
+            var entityManager = IoCManager.Resolve<IEntityManager>();
+            var fac = IoCManager.Resolve<IComponentFactory>();
+
+            if (!entityManager.TryGetComponent(attached, out BodyComponent? body))
             {
                 var random = IoCManager.Resolve<IRobustRandom>();
                 var text = $"You have no body{(random.Prob(0.2f) ? " and you must scream." : ".")}";
@@ -45,13 +48,13 @@ namespace Content.Server.Body.Commands
             }
 
             var mechanismName = string.Join(" ", args).ToLowerInvariant();
+            var bodySystem = entityManager.System<BodySystem>();
 
-            foreach (var (part, _) in body.Parts)
-            foreach (var mechanism in part.Mechanisms)
+            foreach (var organ in bodySystem.GetBodyOrgans(attached, body))
             {
-                if (mechanism.Name.ToLowerInvariant() == mechanismName)
+                if (fac.GetComponentName(organ.Component.GetType()).ToLowerInvariant() == mechanismName)
                 {
-                    part.DeleteMechanism(mechanism);
+                    entityManager.QueueDeleteEntity(organ.Id);
                     shell.WriteLine($"Mechanism with name {mechanismName} has been destroyed.");
                     return;
                 }
